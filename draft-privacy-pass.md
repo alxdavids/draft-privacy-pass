@@ -95,6 +95,8 @@ groups that allow it to be implemented using elliptic curve cryptography
 
 In this document, we will give a formal specification of the Privacy Pass
 protocol in the internet setting. In particular, we will specify how
-communication is achieved over HTTP, along with secure key rotation strategies.
+communication is achieved over HTTP, comparisons with different functionality
+and efficiency configurations, as well as strategies for performing secure key
+rotation.
 
 
