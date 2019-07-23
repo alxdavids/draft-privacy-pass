@@ -478,13 +478,13 @@ where it does not possess any.
 In this section, we will give a broad overview of how the Privacy Pass protocol
 functions in achieving these goals. The generic protocol can be split into three
 phases: initialisation, issuance and redemption. In this protocol description we
-make use of the utility functions displayed in {{utilities}}.
+make use of the utility functions displayed in {{utils}}.
 
 We will give details on the specific cryptographic instantiation of this
 protocol in {{crypto}}. We will also specify how to instantiate the protocol in
 the HTTP setting specifically in {{http}}.
 
-### Initialisation phase
+## Initialisation phase
 
 In the initialisation phase, we assume that there is some common description
 which is available to both parties (described as a sequence of bytes). We will
@@ -503,7 +503,7 @@ auxData := Init(sp, auxData)            auxData := Init(sp, crs)
 return auxData                          return key, auxData
 ~~~
 
-### Issuance phase
+## Issuance phase
 
 The issuance phase allows the client to receive tokens from the server. On
 successful completion of this phase, the client has authenticated to the server
@@ -547,7 +547,7 @@ is := IssuedToken{
 push(is)
 ~~~
 
-### Redemption phase
+## Redemption phase
 
 The redemption phase allows the client to reauthenticate to the server, using a
 token that it has received from a previous issuance phase. The security of the
@@ -555,42 +555,42 @@ VOPRF ensures that the client's identity cannot be linked to any of the previous
 issuance phases.
 
 ~~~
-C                                         S
+C                                     S
 ----------------------------------------------------------------------
-auxData, sp                               key, auxData, sp
+auxData, sp                           key, auxData, sp
 obj := pop()
 ot := obj.token
 vt := obj.voprfToken
 rd := Redeem(ot, vt, sp, auxData)
 
-                           rd
-                  -------------------->
+                        rd
+              -------------------->
 
-                                          d := get(token)
-                                          resp := true
-                                          err := nil
+                                      d := get(token)
+                                      resp := true
+                                      err := nil
 
-                                          if (d) {
-                                            resp = false
-                                            err = DOUBLE_SPEND_ERROR
-                                          }
+                                      if (d) {
+                                        resp = false
+                                        err = DOUBLE_SPEND_ERROR
+                                      }
 
-                                          if (resp) {
-                                            b := RedeemVerify(rd, key, sp, auxData)
-                                            if (!b) {
-                                              resp = false
-                                              err = SERVER_VERIFICATION_ERROR
-                                            }
-                                          }
+                                      if (resp) {
+                                        b := RedeemVerify(rd, key, sp, auxData)
+                                        if (!b) {
+                                          resp = false
+                                          err = SERVER_VERIFICATION_ERROR
+                                        }
+                                      }
 
-                                          set(token, true)
-                                          rr := RedemptionResp{
-                                            resp: resp
-                                            err: err
-                                          }
+                                      set(token, true)
+                                      rr := RedemptionResp{
+                                        resp: resp
+                                        err: err
+                                      }
 
-                           rr
-                  <--------------------
+                        rr
+              <--------------------
 
 ~~~
 
