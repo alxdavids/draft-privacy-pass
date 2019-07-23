@@ -105,8 +105,19 @@ The following terms are used throughout this document.
 
 - PRF: Pseudorandom function
 - VOPRF: Verifiable oblivious PRF
-- Server: A service that provides access to a certain resource
-- Client: An entity that seeks to authenticate to a server
+- Server: A service that provides access to a certain resource (sometimes
+  denoted S)
+- Client: An entity that seeks to authenticate to a server (sometimes denoted C)
+
+## Layout
+
+- {{utils}}: Details a list of utility objects and functions that are used in
+  the generic protocol formulation.
+- {{overview}}: A generic overview of the Privacy Pass protocol based on VOPRFs.
+- {{crypto}}: Specific cryptographic instantiations of the Privacy Pass
+  protocol.
+- {{http}}: A formulation of the Privacy Pass in the HTTP setting, including
+  marshaling and data transfer specifications.
 
 ## Requirements
 
