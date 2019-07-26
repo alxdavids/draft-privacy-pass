@@ -481,6 +481,35 @@ The internal function `tagVerify` has the following signature.
 func tag(t Token, vt VOPRFToken, data []byte, secParameter uint16, auxData []byte) bool
 ~~~
 
+## Error types
+
+In the protocol overview that follows in {{overview}}, we enumerate a number of
+error types that are triggered when certain events occur.
+
+### UNKNOWN_PK_ERROR
+
+Occurs when the public key that a server is using is not known on the
+client-side.
+
+### CLIENT_VERIFICATION_ERROR
+
+Occurs when the client is unable to verify the proof sent by the server that it
+has evaluated the VOPRF correctly.
+
+### UNKNOWN_TOKEN_ERROR
+
+Occurs if the response from the server does not correspond to a token sent in a
+client request.
+
+### DOUBLE_SPEND_ERROR
+
+Occurs if the server records a redemption request that contains a `Token` object
+that has been observed previously.
+
+### SERVER_VERIFICATION_ERROR
+
+Occurs if the server fails to verify a redemption request sent by the client.
+
 # Overview of protocol {#overview}
 
 In this document, we will be assuming that a client (C) is attempting to
@@ -521,7 +550,7 @@ auxData := Init(sp, auxData)            auxData := Init(sp, crs)
                   <-------------------
 
 public := key.public
-set(public.id, public)                          push(key)
+set(public.id, public)                  push(key)
 ~~~
 
 ## Issuance phase
