@@ -135,15 +135,37 @@ functions that we will use throughout the protocol in {{overview}}.
 We describe the data structures that we use for storing and transferring
 information.
 
+### VOPRFParams {#voprfparams}
+
+A `VOPRFParams` object is used to define the cryptographic parameters associated
+with a particular VOPRF instantiation.
+
+~~~
+type VOPRFParams struct {
+  secpar uint16
+  id     uint16
+  crs    []byte
+  opts   []string
+}
+~~~
+
+The field `secpar` refers to the minimum bits of security intended to be
+provided by this parameter choice, `id` is a unique identifier for the object,
+and `crs` is a sequence of random bytes that are used for verifying the
+operations of the VOPRF. The field `opts` is reserved for optional strings that
+configure the parameter set.
+
 ### VOPRFKey {#voprfkey}
 
-A VOPRFKey object is used to define the cryptographic key that is used by the
+A `VOPRFKey` object is used to define the cryptographic key that is used by the
 server.
 
 ~~~
 type VOPRFKey struct {
+  params VOPRFParams
   secret VOPRFSecret
   public VOPRFPublic
+  id     uint16
 }
 ~~~
 
@@ -159,8 +181,8 @@ The VOPRFPublic object defines the public portion of the key.
 
 ~~~
 type VOPRFPublic struct {
+  params  VOPRFParams
   data    []byte
-  id      uint32
   created uint32
   expiry  uint32
 }
@@ -168,7 +190,9 @@ type VOPRFPublic struct {
 
 The field `id` refers to a unique identifier for each public key. The field
 `created` corresponds to the time when the key was created, and the field
-`expiry` refers to the time when the key expires.
+`expiry` refers to the time when the key expires. We intentionally duplicate the
+`params` field in the `VOPRFPublic` object, as this object can also act
+independently of the `VOPRFKey` with which it is associated.
 
 ### Tokens
 
@@ -178,39 +202,25 @@ authenticate a client to a server.
 
 ~~~
 type Token struct {
+  params     VOPRFParams
   data       []byte
-  compressed bool
 }
 ~~~
 
-A `VOPRFToken` object is the principal input type that is used as the
-clients input in a VOPRF protocol.
-
-~~~
-type VOPRFToken struct {
-  token Token
-  id    uint32
-}
-~~~
-
-The field `id` is a unique identifier for each `VOPRFToken` object. We will
-assume that a `Token` object can be transformed into `VOPRFToken` object by just
-instantiating with a dummy identifier.
-
-Finally, a `BlindedToken` object is an abstract wrapper for a `VOPRFToken` that
+Finally, a `BlindedToken` object is an abstract wrapper for a `TOken` that
 is used by the client for acquiring the correct VOPRF evaluations.
 
 ~~~
 type BlindedToken struct {
-  original Token
-  token    VOPRFToken
-  blind    []byte
+  oToken  Token
+  bToken  Token
+  blind   []byte
 }
 ~~~
 
 ### VOPRFProof
 
-A `Proof` object is used to assure the client that the server evaluated the
+A `VOPRFProof` object is used to assure the client that the server evaluated the
 VOPRF honestly.
 
 ~~~
@@ -230,7 +240,7 @@ VOPRF protocol.
 
 ~~~
 type VOPRFOutput struct {
-  token VOPRFToken
+  token Token
   proof VOPRFProof
 }
 ~~~
@@ -242,8 +252,8 @@ authenticating with a server in the Privacy Pass protocol.
 
 ~~~
 type IssuedToken struct {
-  token      Token
-  voprfToken VOPRFToken
+  oToken      Token
+  vToken      Token
 }
 ~~~
 
@@ -280,23 +290,22 @@ We now detail a selection of functions that we will use throughout the protocol.
 
 ### Init
 
-The `Init` function takes a length (or security) parameters, and a common
-description as a sequence of bytes as input and outputs public auxiliary data in
-the form of an array of bytes.
+The `Init` function takes a uint16 identifier as input and outputs a
+`VOPRFParams` object.
 
 ~~~
-func Init(secParameter uint16, common []byte) []byte
+func Init(id uint16) VOPRFParams
 ~~~
 
 ### KeyGen
 
-The `KeyGen` function takes a length (or security) parameter, and some public
-auxiliary data as input and outputs a `VOPRFKey` object.
+The `KeyGen` function takes a `VOPRFParams` object as input and outputs a
+`VOPRFKey` object.
 
 ~~~
-func KeyGen(secParameter uint16, auxData []byte) VOPRFKey {
-  secData := secretGen(secParameter, auxData)
-  pubData := publicGen(secParameter, auxData, privData)
+func KeyGen(params VOPRFParams) VOPRFKey {
+  secData := secretGen(params)
+  pubData := publicGen(params, privData)
   created := currDate()
   expiry := exprDate()
   id := idGen(auxData, pubData)
@@ -313,6 +322,7 @@ func KeyGen(secParameter uint16, auxData []byte) VOPRFKey {
   }
 
   return VOPRFKey{
+    params: params,
     secret: secret,
     public: public
   }
@@ -331,38 +341,38 @@ The internal functions used in `KeyGen` are defined in the following way:
 The `secretGen` and `publicGen` function statements are defined below.
 
 ~~~
-func secretGen(secParameter uint16, auxData []byte) []byte
+func secretGen(params VOPRFParams) []byte
 ~~~
 
 ~~~
-func publicGen(secParameter uint16, auxData []byte) []byte
+func publicGen(params VOPRFParams) []byte
 ~~~
 
 Any errors occurring during `KeyGen` should be considered fatal.
 
 ### TokenGen
 
-The `TokenGen` function takes the security and auxiliary parameters as inputs,
-and outputs a randomly generated `Token` object.
+The `TokenGen` function takes a `VOPRFParams` object as input, and outputs a
+randomly generated `Token` object.
 
 ~~~
-func TokenGen(secParameter uint16, auxData []byte) Token
+func TokenGen(params VOPRFParams) Token
 ~~~
 
 ### BlindedTokenGen
 
-The `BlindedTokenGen` function takes the security and auxiliary parameters as
-inputs, and outputs a new `BlindedToken` object.
+The `BlindedTokenGen` function takes a `VOPRFParams` object as input, and
+outputs a new `BlindedToken` object.
 
 ~~~
-func BlindedTokenGen(secParameter uint16, auxData []byte) BlindedTokenGen {
-  token := TokenGen(secParameter, auxData)
-  blind := sampleBlind(secParameter, auxData)
-  voprfToken := constructBlindedToken(token, blind, auxData)
+func BlindedTokenGen(params VOPRFParams) BlindedTokenGen {
+  oToken := TokenGen(params)
+  blind := sampleBlind(params)
+  bToken := constructBlindedToken(token, blind)
   return BlindedToken{
-    original: token,
-    token:    voprfToken,
-    blind:    blind,
+    oToken: oToken,
+    bToken: bToken,
+    blind: blind,
   }
 }
 ~~~
@@ -370,28 +380,29 @@ func BlindedTokenGen(secParameter uint16, auxData []byte) BlindedTokenGen {
 The internal functions are defined as follows, along with the subsequent
 function signatures.
 
-- `sampleBlind` outputs a random sequence of bytes, depending on the security
-  and auxiliary data parameters that are provides
-- `constructBlindedToken` constructs a `VOPRFToken` object, given a `Token` and
-  a `blind` represented as a sequence of bytes.
+- `sampleBlind` outputs a random sequence of bytes, depending on the input
+  parameters.
+- `constructBlindedToken` constructs a `Token` object, given a `Token` and
+  a `blind` represented as a sequence of bytes as input.
 
 ~~~
-func sampleBlind(secParameter uint16, auxData []byte) []byte
+func sampleBlind(params VOPRFParams) []byte
 ~~~
 
 ~~~
-func constructBlindedToken(token Token, blind []byte, auxData []byte) VOPRFToken
+func constructBlindedToken(token Token, blind []byte) Token
 ~~~
 
 ### UnblindToken
 
-The `UnblindToken` function takes as input a `VOPRFToken` object and byte arrays
-`blind` and `auxData`. It outputs a new `Token` object.
+The `UnblindToken` function takes as input a `Token` object and byte arrays
+`blind`. It outputs a new `Token` object.
 
 ~~~
-func UnblindToken(vt VOPRFToken, blind []byte, auxData []byte) Token {
-  data := unblind(vt.data, blind, auxData)
+func UnblindToken(vt Token, blind []byte) Token {
+  data := unblind(vt.params, vt.data, blind)
   return Token{
+    params: vt.params
     data: data,
     compressed: vt.token.compressed
   }
@@ -402,18 +413,18 @@ The internal function `unblind` takes three `[]byte` inputs and outputs
 `[]byte`:
 
 ~~~
-func unblind(vtData []byte, blind []byte, auxData []byte) []byte
+func unblind(params VOPRFParams, vtData []byte, blind []byte) []byte
 ~~~
 
 ### VOPRFEval
 
-The `VOPRFEval` function takes a `VOPRFKey`, a `VOPRFToken` and auxiliary data
-as input, and outputs a `VOPRFOutput` object.
+The `VOPRFEval` function takes a `VOPRFKey` object and a `Token` object as
+input; it outputs a `VOPRFOutput` object.
 
 ~~~
-func VOPRFEval(key VOPRFKey, token VOPRFToken, auxData []byte) VOPRFOutput {
-  output := evaluate(key, token, auxData)
-  proof := prove(key, token, output, auxData)
+func VOPRFEval(key VOPRFKey, token Token) VOPRFOutput {
+  output := evaluate(key, token)
+  proof := prove(key, token, output)
   return VOPRFOutput{
     token: output,
     proof: proof,
@@ -424,31 +435,30 @@ func VOPRFEval(key VOPRFKey, token VOPRFToken, auxData []byte) VOPRFOutput {
 The internal functions are defined as follows:
 
 ~~~
-func evaluate(key VOPRFKey, token VOPRFToken, auxData []byte) VOPRFToken
+func evaluate(key VOPRFKey, token Token) Token
 ~~~
 
 ~~~
-func prove(key VOPRFKey, token VOPRFToken, voprfEval VOPRFToken, auxData []byte) VOPRFProof
+func prove(key VOPRFKey, token Token, voprfEval Token) VOPRFProof
 ~~~
 
 ### VOPRFVerify
 
-The `VOPRFVerify` function takes `VOPRFPublic`, `VOPRFToken`, `VOPRFProof`
-objects, and auxiliary data as input. It outputs a boolean value.
+The `VOPRFVerify` function takes `VOPRFPublic`, `Token`, `VOPRFProof` objects as
+input. It outputs a boolean value.
 
 ~~~
-func VOPRFVerify(public VOPRFPublic, token VOPRFToken, proof VOPRFProof, auxData []byte) bool
+func VOPRFVerify(public VOPRFPublic, token Token, proof VOPRFProof) bool
 ~~~
 
 ### Redeem
 
-The `Redeem` function takes a `Token` object, a `VOPRFToken` object, the
-security parameter and auxiliary data as input. It outputs a `RedemptionData`
-object.
+The `Redeem` function takes two `Token` objects as input. It outputs a
+`RedemptionData` object.
 
 ~~~
-func Redeem(t Token, vt VOPRFToken, secParameter uint16, auxData []byte) RedemptionData {
-  data := tag(t, vt, secParameter, auxData)
+func Redeem(t Token, vt Token) RedemptionData {
+  data := tag(t, vt)
   return RedemptionData{
     token: t,
     data: data,
@@ -459,26 +469,25 @@ func Redeem(t Token, vt VOPRFToken, secParameter uint16, auxData []byte) Redempt
 The internal function `tag` has the following signature.
 
 ~~~
-func tag(t Token, vt VOPRFToken, secParameter uint16, auxData []byte) []byte
+func tag(t Token, vt Token) []byte
 ~~~
 
 ### RedeemVerify
 
 The `RedeemVerify` function takes a `RedemptionData` object, a `VOPRFKey`
-object, the security parameter and auxiliary data as input. It outputs a boolean
-value.
+object. It outputs a boolean value.
 
 ~~~
-func RedeemVerify(rd RedemptionData, key VOPRFKey, secParameter uint16, auxData []byte) bool {
-  chk := VOPRFEval(key, rd.token, auxData)
-  return tagVerify(rd.token, chk, rd.data, secParameter, auxData)
+func RedeemVerify(rd RedemptionData, key VOPRFKey) bool {
+  chk := VOPRFEval(key, rd.token)
+  return tagVerify(rd.token, chk, rd.data)
 }
 ~~~
 
 The internal function `tagVerify` has the following signature.
 
 ~~~
-func tag(t Token, vt VOPRFToken, data []byte, secParameter uint16, auxData []byte) bool
+func tag(t Token, vt Token, data []byte) bool
 ~~~
 
 ## Error types
@@ -495,11 +504,6 @@ client-side.
 
 Occurs when the client is unable to verify the proof sent by the server that it
 has evaluated the VOPRF correctly.
-
-### UNKNOWN_TOKEN_ERROR
-
-Occurs if the response from the server does not correspond to a token sent in a
-client request.
 
 ### DOUBLE_SPEND_ERROR
 
@@ -536,22 +540,34 @@ security parameter `sp`.
 
 The initialisation (or init) phase consists of the server generating their VOPRF
 key pair. The public key generated by the server is sent to the client, and the
-client stores the key for future usage. Both participants also generate the
-auxiliary data for the protocol.
+client stores the key for future usage.
 
 ~~~
-C                                       S
+C                                                 S
 ----------------------------------------------------------------------
-crs, sp                                 crs, sp
-auxData := Init(sp, auxData)            auxData := Init(sp, crs)
-                                        key := KeyGen(sp, auxData)
+                                                  id <-- SERVER_SUPPORTED_PARAMS
+                                                  params := Init(id)
+                                                  key := KeyGen(params)
 
-                       key.public
-                  <-------------------
+                                key.public
+                            <-------------------
 
 public := key.public
-set(public.id, public)                  push(key)
+params := public.params
+if (!CLIENT_SUPPORTED_PARAMS.includes(params)) {
+  panic(UNSUPPORTED_PARAMS_ERROR)
+}
+set(public.id, public)                            push(key)
 ~~~
+
+In the protocol above, we use `CLIENT_SUPPORTED_PARAMS` and
+`SERVER_SUPPORTED_PARAMS` both of types `[]uint16` to refer to the client's and
+server's respective supported parameter sets. The notation:
+```
+id <-- SERVER_SUPPORTED_PARAMS
+```
+indicates that the server chooses some identifier from the list via any general
+method.
 
 ## Issuance phase
 
@@ -560,44 +576,41 @@ successful completion of this phase, the client has authenticated to the server
 and stored a token for future usage.
 
 ~~~
-C                                         S
+C                                       S
 ----------------------------------------------------------------------
-auxData, sp                               key, auxData, sp
-bt1 := BlindedTokenGen(sp, auxData)
-vt := bt.token
-set(vt.id, bt)
+                                        key
 
-                            vt
-                  -------------------->
+                        key.id
+                  <-----------------
 
-                                          out := VOPRFEval(key, token, auxData)
-
-                            out
-                  <--------------------
-
-et := out.token
-proof := out.proof
-id := proof.keyId
 public := get(id)
 if (public == nil) {
   panic(UNKNOWN_PK_ERROR)
 }
+params := public.params
+bt1 := BlindedTokenGen(params)
+vt := bt.token
 
-b := VOPRFVerify(public, et, proof, auxData)
+                          vt
+                  ------------------>
+
+                                        out := VOPRFEval(key, vt.token)
+
+                          out
+                  <------------------
+
+et := out.token
+proof := out.proof
+b := VOPRFVerify(public, et, proof)
 if (!b) {
   panic(CLIENT_VERIFICATION_ERROR)
 }
 
-bt2 := get(et.id)
-blind := bt2.blind
-if (blind == nil) {
-  panic(UNKNOWN_TOKEN_ERROR)
-}
-
-token := UnblindToken(et, blind, auxData)
+blind := bt1.blind
+token := UnblindToken(et, blind)
 is := IssuedToken{
-  token: bt2.original
-  voprfToken: token
+  oToken: bt2.original
+  vToken: token
 }
 push(is)
 ~~~
@@ -612,11 +625,21 @@ issuance phases.
 ~~~
 C                                     S
 ----------------------------------------------------------------------
-auxData, sp                           key, auxData, sp
-obj := pop()
-ot := obj.token
-vt := obj.voprfToken
-rd := Redeem(ot, vt, sp, auxData)
+                                      key
+
+                    key.id
+              <-------------------
+
+public := get(id)
+if (public == nil) {
+  panic(UNKNOWN_PK_ERROR)
+}
+params := params.public
+
+obj := pop(id)
+ot := obj.oToken
+vt := obj.vToken
+rd := Redeem(ot, vt)
 
                         rd
               -------------------->
@@ -631,7 +654,7 @@ rd := Redeem(ot, vt, sp, auxData)
                                       }
 
                                       if (resp) {
-                                        b := RedeemVerify(rd, key, sp, auxData)
+                                        b := RedeemVerify(rd, key)
                                         if (!b) {
                                           resp = false
                                           err = SERVER_VERIFICATION_ERROR
