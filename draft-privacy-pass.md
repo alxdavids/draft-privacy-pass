@@ -44,7 +44,7 @@ normative:
         org: Independent
   OPRF:
     title: Oblivious Pseudorandom Functions (OPRFs) using Prime-Order Groups
-    target: https://tools.ietf.org/html/draft-sullivan-cfrg-voprf-03
+    target: https://tools.ietf.org/html/draft-irrf-cfrg-voprf-01
     authors:
       -
         ins: A. Davidson
@@ -61,6 +61,12 @@ normative:
   PPSRV:
     title: Cloudflare Supports Privacy Pass
     target: https://blog.cloudflare.com/cloudflare-supports-privacy-pass/
+  DSS:
+    title: "FIPS PUB 186-4: Digital Signature Standard (DSS)"
+    target: https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.186-4.pdf
+    author:
+      -
+        ins: Federal Information Processing Standards Publication
 
 --- abstract
 
@@ -90,29 +96,36 @@ previously authenticated clients do not reveal their identity on
 reauthentication. The protocol uses a cryptographic primitive known as a
 verifiable oblivious pseudorandom function (VOPRF) for implementing the
 authentication mechanism. In particular, the VOPRF is constructed in prime-order
-groups that allow it to be implemented using elliptic curve cryptography
+groups. In particular, this allows it to be implemented using elliptic curves
 {{OPRF}}.
 
 In this document, we will give a formal specification of the Privacy Pass
 protocol in the internet setting. In particular, we will specify how
 communication is achieved over HTTP, comparisons with different functionality
-and efficiency configurations, as well as strategies for performing secure key
-rotation.
+and efficiency configurations, and how the OPRF protocol should be integrated
+into the wider Privacy Pass protocol workflow.
 
 ## Terminology
 
 The following terms are used throughout this document.
 
 - PRF: Pseudorandom function
-- VOPRF: Verifiable oblivious PRF
+- VOPRF: Verifiable oblivious PRF {{OPRF}}
 - Server: A service that provides access to a certain resource (sometimes
   denoted S)
 - Client: An entity that seeks to authenticate to a server (sometimes denoted C)
 
+## Preliminaries
+
+Throughout this draft, let D be some object corresponding to an opaque data type
+(such as a group element). We write []byte(D) to denote the encoding of this
+data type as raw bytes. For two objects x and y, we denote the concatenation of
+the bytes of these objects by ([]byte(x) .. []byte(y)). We assume that all
+bytes are first base64-encoded before they are sent as part of a protocol
+message.
+
 ## Layout
 
-- {{utils}}: Details a list of utility objects and functions that are used in
-  the generic protocol formulation.
 - {{overview}}: A generic overview of the Privacy Pass protocol based on VOPRFs.
 - {{crypto}}: Specific cryptographic instantiations of the Privacy Pass
   protocol.
@@ -125,395 +138,6 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD",
 "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be
 interpreted as described in {{RFC2119}}.
 
-# Utilities {#utils}
-
-In this section, we will give an exhaustive list of all the data structures and
-functions that we will use throughout the protocol in {{overview}}.
-
-## Data structures {#structs}
-
-We describe the data structures that we use for storing and transferring
-information.
-
-### VOPRFParams {#voprfparams}
-
-A `VOPRFParams` object is used to define the cryptographic parameters associated
-with a particular VOPRF instantiation.
-
-~~~
-type VOPRFParams struct {
-  secpar uint16
-  id     uint16
-  crs    []byte
-  opts   []string
-}
-~~~
-
-The field `secpar` refers to the minimum bits of security intended to be
-provided by this parameter choice, `id` is a unique identifier for the object,
-and `crs` is a sequence of random bytes that are used for verifying the
-operations of the VOPRF. The field `opts` is reserved for optional strings that
-configure the parameter set.
-
-### VOPRFKey {#voprfkey}
-
-A `VOPRFKey` object is used to define the cryptographic key that is used by the
-server.
-
-~~~
-type VOPRFKey struct {
-  params VOPRFParams
-  secret VOPRFSecret
-  public VOPRFPublic
-  id     uint16
-}
-~~~
-
-The VOPRFSecret object defines the secret portion of the key.
-
-~~~
-type VOPRFSecret struct {
-  data []byte
-}
-~~~
-
-The VOPRFPublic object defines the public portion of the key.
-
-~~~
-type VOPRFPublic struct {
-  params  VOPRFParams
-  data    []byte
-  created uint32
-  expiry  uint32
-}
-~~~
-
-The field `id` refers to a unique identifier for each public key. The field
-`created` corresponds to the time when the key was created, and the field
-`expiry` refers to the time when the key expires. We intentionally duplicate the
-`params` field in the `VOPRFPublic` object, as this object can also act
-independently of the `VOPRFKey` with which it is associated.
-
-### Tokens
-
-Token objects are the primary structures for holding data that is consumed
-within the protocol. In particular, a `Token` is the object that is used to
-authenticate a client to a server.
-
-~~~
-type Token struct {
-  params     VOPRFParams
-  data       []byte
-}
-~~~
-
-Finally, a `BlindedToken` object is an abstract wrapper for a `TOken` that
-is used by the client for acquiring the correct VOPRF evaluations.
-
-~~~
-type BlindedToken struct {
-  oToken  Token
-  bToken  Token
-  blind   []byte
-}
-~~~
-
-### VOPRFProof
-
-A `VOPRFProof` object is used to assure the client that the server evaluated the
-VOPRF honestly.
-
-~~~
-type VOPRFProof struct {
-  data   []byte
-  keyId  uint32
-}
-~~~
-
-The variable `keyId` is essentially used to hold the ID of the public key
-associated with the secret key used to generate the proof data.
-
-### VOPRFOutput
-
-A `VOPRFOutput` object is the principal output generated by the server during a
-VOPRF protocol.
-
-~~~
-type VOPRFOutput struct {
-  token Token
-  proof VOPRFProof
-}
-~~~
-
-### IssuedToken
-
-An `IssuedToken` object is the principal output generated by a client after
-authenticating with a server in the Privacy Pass protocol.
-
-~~~
-type IssuedToken struct {
-  oToken      Token
-  vToken      Token
-}
-~~~
-
-### RedemptionData
-
-A `RedemptionData` object is the principal object type sent by a client to
-reauthenticated with a server, after a successful previous authentication.
-
-~~~
-type RedemptionData struct {
-  token Token
-  data  []byte
-}
-~~~
-
-### RedemptionResp
-
-A `RedemptionResp` object is the principal object type returned from the server
-to the client, indicating whether a redemption was successful or not.
-
-~~~
-type RedemptionResp struct {
-  resp bool
-  err  error
-}
-~~~
-
-If `resp == true`, then `err == nil`. Otherwise, `err` should be populated with
-the correct error type.
-
-## Common functions {#funcs}
-
-We now detail a selection of functions that we will use throughout the protocol.
-
-### Init
-
-The `Init` function takes a uint16 identifier as input and outputs a
-`VOPRFParams` object.
-
-~~~
-func Init(id uint16) VOPRFParams
-~~~
-
-### KeyGen
-
-The `KeyGen` function takes a `VOPRFParams` object as input and outputs a
-`VOPRFKey` object.
-
-~~~
-func KeyGen(params VOPRFParams) VOPRFKey {
-  secData := secretGen(params)
-  pubData := publicGen(params, privData)
-  created := currDate()
-  expiry := exprDate()
-  id := idGen(auxData, pubData)
-
-  public := VOPRFPublic{
-    data: pubData,
-    id: id,
-    created: created,
-    expiry: expiry,
-  }
-
-  secret := VOPRFSecret{
-    data: secData
-  }
-
-  return VOPRFKey{
-    params: params,
-    secret: secret,
-    public: public
-  }
-}
-~~~
-
-The internal functions used in `KeyGen` are defined in the following way:
-
-- `currDate` returns the current date/time
-- `expiryDate` returns the corresponding expiry date/time
-- `secretGen` returns a sequence of bytes that will be used as the secret
-  portion of the key
-- `publicGen` returns a sequence of bytes that will be as the public portion of
-  the key
-
-The `secretGen` and `publicGen` function statements are defined below.
-
-~~~
-func secretGen(params VOPRFParams) []byte
-~~~
-
-~~~
-func publicGen(params VOPRFParams) []byte
-~~~
-
-Any errors occurring during `KeyGen` should be considered fatal.
-
-### TokenGen
-
-The `TokenGen` function takes a `VOPRFParams` object as input, and outputs a
-randomly generated `Token` object.
-
-~~~
-func TokenGen(params VOPRFParams) Token
-~~~
-
-### BlindedTokenGen
-
-The `BlindedTokenGen` function takes a `VOPRFParams` object as input, and
-outputs a new `BlindedToken` object.
-
-~~~
-func BlindedTokenGen(params VOPRFParams) BlindedTokenGen {
-  oToken := TokenGen(params)
-  blind := sampleBlind(params)
-  bToken := constructBlindedToken(token, blind)
-  return BlindedToken{
-    oToken: oToken,
-    bToken: bToken,
-    blind: blind,
-  }
-}
-~~~
-
-The internal functions are defined as follows, along with the subsequent
-function signatures.
-
-- `sampleBlind` outputs a random sequence of bytes, depending on the input
-  parameters.
-- `constructBlindedToken` constructs a `Token` object, given a `Token` and
-  a `blind` represented as a sequence of bytes as input.
-
-~~~
-func sampleBlind(params VOPRFParams) []byte
-~~~
-
-~~~
-func constructBlindedToken(token Token, blind []byte) Token
-~~~
-
-### UnblindToken
-
-The `UnblindToken` function takes as input a `Token` object and byte arrays
-`blind`. It outputs a new `Token` object.
-
-~~~
-func UnblindToken(vt Token, blind []byte) Token {
-  data := unblind(vt.params, vt.data, blind)
-  return Token{
-    params: vt.params
-    data: data,
-    compressed: vt.token.compressed
-  }
-}
-~~~
-
-The internal function `unblind` takes three `[]byte` inputs and outputs
-`[]byte`:
-
-~~~
-func unblind(params VOPRFParams, vtData []byte, blind []byte) []byte
-~~~
-
-### VOPRFEval
-
-The `VOPRFEval` function takes a `VOPRFKey` object and a `Token` object as
-input; it outputs a `VOPRFOutput` object.
-
-~~~
-func VOPRFEval(key VOPRFKey, token Token) VOPRFOutput {
-  output := evaluate(key, token)
-  proof := prove(key, token, output)
-  return VOPRFOutput{
-    token: output,
-    proof: proof,
-  }
-}
-~~~
-
-The internal functions are defined as follows:
-
-~~~
-func evaluate(key VOPRFKey, token Token) Token
-~~~
-
-~~~
-func prove(key VOPRFKey, token Token, voprfEval Token) VOPRFProof
-~~~
-
-### VOPRFVerify
-
-The `VOPRFVerify` function takes `VOPRFPublic`, `Token`, `VOPRFProof` objects as
-input. It outputs a boolean value.
-
-~~~
-func VOPRFVerify(public VOPRFPublic, token Token, proof VOPRFProof) bool
-~~~
-
-### Redeem
-
-The `Redeem` function takes two `Token` objects as input. It outputs a
-`RedemptionData` object.
-
-~~~
-func Redeem(t Token, vt Token) RedemptionData {
-  data := tag(t, vt)
-  return RedemptionData{
-    token: t,
-    data: data,
-  }
-}
-~~~
-
-The internal function `tag` has the following signature.
-
-~~~
-func tag(t Token, vt Token) []byte
-~~~
-
-### RedeemVerify
-
-The `RedeemVerify` function takes a `RedemptionData` object, a `VOPRFKey`
-object. It outputs a boolean value.
-
-~~~
-func RedeemVerify(rd RedemptionData, key VOPRFKey) bool {
-  chk := VOPRFEval(key, rd.token)
-  return tagVerify(rd.token, chk, rd.data)
-}
-~~~
-
-The internal function `tagVerify` has the following signature.
-
-~~~
-func tag(t Token, vt Token, data []byte) bool
-~~~
-
-## Error types
-
-In the protocol overview that follows in {{overview}}, we enumerate a number of
-error types that are triggered when certain events occur.
-
-### UNKNOWN_PK_ERROR
-
-Occurs when the public key that a server is using is not known on the
-client-side.
-
-### CLIENT_VERIFICATION_ERROR
-
-Occurs when the client is unable to verify the proof sent by the server that it
-has evaluated the VOPRF correctly.
-
-### DOUBLE_SPEND_ERROR
-
-Occurs if the server records a redemption request that contains a `Token` object
-that has been observed previously.
-
-### SERVER_VERIFICATION_ERROR
-
-Occurs if the server fails to verify a redemption request sent by the client.
-
 # Overview of protocol {#overview}
 
 In this document, we will be assuming that a client (C) is attempting to
@@ -524,50 +148,223 @@ where it does not possess any.
 
 In this section, we will give a broad overview of how the Privacy Pass protocol
 functions in achieving these goals. The generic protocol can be split into three
-phases: initialisation, issuance and redemption. In this protocol description we
-make use of the utility functions displayed in {{utils}}.
+phases: initialisation, issuance and redemption. In particular, a large part of
+the operations that we require are specified as part of existing VOPRF
+functionality {{OPRF}}. We adhere to the recommendations laid out in {{OPRF}} in
+integrating the VOPRF protocol into our wider workflow. Where necessary, we lay
+out exactly which VOPRF API functionality we use.
 
-We will give details on the specific cryptographic instantiation of this
-protocol in {{crypto}}. We will also specify how to instantiate the protocol in
-the HTTP setting specifically in {{http}}.
+## Key initialisation phase
 
-## Initialisation phase
+In the initialisation phase, essentially we run the VOPRF setup phase in that
+the server runs VOPRF_Setup(l) where l is the required bit-length of the prime
+used in establishing the order of the group GG. This outputs the tuple (k,Y,p)
+where: p = p(l) is the prime order of GG = GG(l); k is a uniformly sampled
+element from GF(p); and Y = kG for some fixed generator of GG.
 
-In the initialisation phase, we assume that there is some common description
-which is available to both parties (described as a sequence of bytes). We will
-denote this common description by `crs`. Both C and S are also aware of the
-security parameter `sp`.
+However, the server must first come to an agreement on what group instantiation
+to support. This involves choosing an instantiation with the required security
+level implied by the choice of l. The server has a list of supported group
+params (GROUP_PARAMS) and chooses an identifier, id, associated with the
+preferred group configuration, and also outputs the implied length of l. It
+creates a Privacy Pass key object denoted by ppKey that has fields "private",
+"public" and "group". It sets ppKey.private = []byte(k), ppKey.public =
+[]byte(Y) and ppKey.group = id.
 
-The initialisation (or init) phase consists of the server generating their VOPRF
-key pair. The public key generated by the server is sent to the client, and the
-client stores the key for future usage.
+The server creates a JSON object of the form below.
 
 ~~~
-C                                                 S
-----------------------------------------------------------------------
-                                                  id <-- SERVER_SUPPORTED_PARAMS
-                                                  params := Init(id)
-                                                  key := KeyGen(params)
+{
+  "Y": pp_key.public
+  "expiry": <expiry_date>
+  "sig": <signature>
+}
+~~~
 
-                                key.public
+The field "expiry" corresponds to an expiry date for the newly sampled key. We
+recommend that each key has a lifetime of between 1 month and 1 year. The field
+"sig" holds an ASN1-encoded ECDSA signature evaluated over the contents of "Y"
+and "expiry". The ECDSA parameters should be equivalent to the group
+instantiation used for the OPRF, and the signing key (ecdsaSK) should be
+long-term with a corresponding publicly available verification key (ecdsaVK). We
+summarize the creation of this object using the algorithm PP_key_init(), which
+we define below.
+
+~~~
+function PP_key_init(k, Y, id) {
+  ppKey.private = []byte(k)
+  ppKey.public = []byte(Y)
+  ppKey.group = id
+  var today = new Date()
+  var expiry = today.setMonth(today.getMonth() + n);
+  var obj = {
+    Y: ppKey.public,
+    expiry: expiry,
+    sig: ECDSA.sign(ecdsaSK, ppKey.public .. []byte(expiry)),
+    id: id,
+  }
+  return [ppKey, obj]
+}
+~~~
+
+Note that the variable n above should correspond to the number of months ahead
+that the expiry date should correspond to.
+
+We give a diagrammatic representation of the initialisation phase below.
+
+~~~
+C(ecdsaVK)                                        S(ecdsaSK)
+----------------------------------------------------------------------
+                                                  l = GROUP_PARAMS[id]
+                                                  (k,Y,p) = VOPRF_Setup(l)
+                                                  [ppKey,obj] = PP_key_init(k,Y,id)
+
+                                     obj
                             <-------------------
 
 public := key.public
-params := public.params
-if (!CLIENT_SUPPORTED_PARAMS.includes(params)) {
-  panic(UNSUPPORTED_PARAMS_ERROR)
+if (!ECDSA.verify(ecdsaVK, obj.Y .. []byte(obj.expiry)) {
+  panic(ECDSA_VERIFICATION_FAILED)
+} else if (!(new Date() < obj.expiry)) {
+  panic(COMMITMENT_EXPIRED_ERROR)
 }
-set(public.id, public)                            push(key)
+store(obj.id, obj.public)                            push(key)
 ~~~
 
-In the protocol above, we use `CLIENT_SUPPORTED_PARAMS` and
-`SERVER_SUPPORTED_PARAMS` both of types `[]uint16` to refer to the client's and
-server's respective supported parameter sets. The notation:
-```
-id <-- SERVER_SUPPORTED_PARAMS
-```
-indicates that the server chooses some identifier from the list via any general
-method.
+The variable obj essentially corresponds to a cryptographic commitment to the
+server's VOPRF key. We abstract all signing and verification of ECDSA signatures
+into the ECDSA.sign and ECDSA.verify functionality {{DSS}}.
+
+### Trusted registry
+
+Rather than sending the result of the key initialisation procedure directly to
+each client, it is preferable to upload the object obj to a trusted,
+tamper-proof, history-preserving registry. By trusted, we mean from the
+perspective of clients that use the Privacy Pass protocol. Any new keys uploaded
+to the registry should be appended to the list. Any keys that have expired can
+optionally be labelled as so, but should never be removed. A trusted registry
+may hold key commitments for multiple Privacy Pass service providers (servers).
+
+Clients can either choose to:
+
+- poll the trusted registry and import new keys, rejecting any that throw
+  errors;
+- retrieve the commitments for the server at the time at which they are used,
+  throwing errors if no valid commitment is available.
+
+To prevent unauthorized modification of the trusted registry, server's should be
+required to identify and authenticate themselves before they can append data to
+their configuration. Moreover, only parts of the registry that correspond to the
+servers configuration can be modifiable.
+
+### Key rotation
+
+Whenever a server seeks to rotate their key, they must append their key to the
+trusted registry. We recommend that the trusted registry is arranged as a JSON
+blob with a member for each JSON provider. Each provider appends new keys by
+creating a new sub-member corresponding to an incremented version label along
+with their new commitment object.
+
+Concretely, we recommend that the trusted registry is a JSON file of the form
+below.
+
+~~~
+{
+  "server_1": {
+    "1.0": {
+      "Y": ...,
+      "expiry": ...
+      "sig": ...
+    },
+    "1.1": {
+      "Y": ...,
+      "expiry": ...
+      "sig": ...
+    },
+  }
+  "server_2": {
+    "1.0": {
+      "Y": ...,
+      "expiry": ...
+      "sig": ...
+    },
+  },
+  ...
+}
+~~~
+
+In this structure, "server_1" and "server_2" are separate service providers. The
+sub-members "1.0", "1.1" of "server_1" correspond to the versions of commitments
+available to the client. Increasing version numbers should correspond to newer
+keys. If "server_2" wants to upload a new commitment with version tag "1.1", it
+runs the key initialisation procedure from above and adds a new sub-member "1.1"
+with the value set to the value of the output obj. The "server_2" member should
+now take the form below.
+
+~~~
+{
+  ...
+  "server_2": {
+    "1.0": {
+      "Y": ...,
+      "expiry": ...
+      "sig": ...
+    },
+    "1.1": {
+      "Y": ...,
+      "expiry": ...
+      "sig": ...
+    },
+  },
+  ...
+}
+~~~
+
+### Key revocation
+
+If a server must revoke a key, then it uses a separate member with label
+"revoke" corresponding to an array of revoke versions associated with key
+commitments. In the above example, if "server_2" needs to revoke the key with
+version "1.0", then it appends a new "revoke" member with the array [ "1.0" ].
+Any future revocations can simply be appended to this array. For an example, see
+below.
+
+~~~
+{
+  ...
+  "server_2": {
+    "1.0": {
+      "Y": ...,
+      "expiry": ...
+      "sig": ...
+    },
+    "1.1": {
+      "Y": ...,
+      "expiry": ...
+      "sig": ...
+    },
+    "revoked": [ "1.0" ],
+  },
+  ...
+}
+~~~
+
+Client's are required to check the "revoked" member for new additions when they
+poll the trusted registry for new key data.
+
+### ECDSA key material
+
+For clients must also know the verification (ecdsaVK) for each service provider
+that they support. This enables the client to verify that the commitment is
+properly formed before it uses it. We do not provide any specific
+recommendations on how the client has access to this key, beyond that the
+verification key should be accessible separately from the trusted registry.
+
+While the number of service providers associated with Privacy Pass is low, the
+client can simply hardcode the verification keys directly for each provider that
+they support. This may be cumbersome if a provider wants to rotate their signing
+key, but since these keys should be comparatively long-term (relative to the
+VOPRF key schedule), then this should not be too much of an issue.
 
 ## Issuance phase
 
