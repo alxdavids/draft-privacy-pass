@@ -320,6 +320,27 @@ now take the form below.
 }
 ~~~
 
+
+### Client retrieval
+
+We define a function retrieve(server_id, version_id) which retrieves the
+commitment with version label equal to version_id, for the provider denoted by
+the string server_id. For example, retrieve("server_1","1.1") will retrieve the
+member labelled with "1.1".
+
+We implicitly assume that this function performs the following verification
+checks:
+
+~~~
+if (!ECDSA.verify(ecdsaVK, obj.Y .. []byte(obj.expiry)) {
+  return "error"
+} else if (!(new Date() < obj.expiry)) {
+  return "error"
+}
+~~~
+
+If "error" is not returned, then it instead returns the entire object.
+
 ### Key revocation
 
 If a server must revoke a key, then it uses a separate member with label
@@ -352,6 +373,20 @@ below.
 Client's are required to check the "revoked" member for new additions when they
 poll the trusted registry for new key data.
 
+### Group instantiations
+
+Following the recommendations in {{OPRF}}, we assume that a server uses only one
+group instantiation at any one time. Should a server choose to change the group
+instantiation, we recommend that the server create a new identifying label (e.g.
+"server_1_${group_id}") where group_id corresponds to the identifier of the
+group. Then "server_1" revokes all keys for the previous group instantiation and
+then only offers commitments for the current label.
+
+An alternative arrangement would be to add a new layer of members between server
+identifiers and key versions in the JSON struct, corresponding to the group_id.
+Then the client may choose commitments from the appropriate group identifying
+member.
+
 ### ECDSA key material
 
 For clients must also know the verification (ecdsaVK) for each service provider
@@ -368,48 +403,55 @@ VOPRF key schedule), then this should not be too much of an issue.
 
 ## Issuance phase
 
-The issuance phase allows the client to receive tokens from the server. On
-successful completion of this phase, the client has authenticated to the server
-and stored a token for future usage.
+The issuance phase allows the client to receive VOPRF evaluations from the
+server. The issuance phase essentially corresponds to a VOPRF evaluation phase
+{{OPRF}}. In essence, the client generates a valid VOPRF input x (a sequence of
+bytes from some unpredictable distribution), and runs the VOPRF evaluation phase
+with the server. The client receives an output y of the form:
 
 ~~~
-C                                       S
+    y = H_2("voprf_derive_key", x .. []byte(N))
+~~~
+
+where H_2 is a function defined in {{OPRF}} that is modeled as a random oracle,
+and N is an group element. More specifically, N is an unblinded group element
+equal to k*H_1(x) where H_1 is a random oracle that outputs elements in GG. The
+client stores (x, y) as recommended in {{OPRF}}. We give a diagrammatic overview
+of the protocol below.
+
+~~~
+C(x)                                 S(ppKey)
 ----------------------------------------------------------------------
-                                        key
 
-                        key.id
-                  <-----------------
+var (r,M) = VOPRF_Blind(x)
 
-public := get(id)
-if (public == nil) {
-  panic(UNKNOWN_PK_ERROR)
-}
-params := public.params
-bt1 := BlindedTokenGen(params)
-vt := bt.token
-
-                          vt
+                       []byte(M)
                   ------------------>
 
-                                        out := VOPRFEval(key, vt.token)
+                                        (Z,D) = VOPRF_Eval(ppKey.private,G,Y,M)
+                                        var resp = {
+                                          element: []byte(Z),
+                                          proof: []byte(D),
+                                          version: "key_version",
+                                        }
 
-                          out
+                          resp
                   <------------------
 
-et := out.token
-proof := out.proof
-b := VOPRFVerify(public, et, proof)
-if (!b) {
+var elt = resp.element
+var proof = resp.proof
+var version = resp.version
+var obj = retrieve(S.id, version)
+if obj == "error" {
+  panic(INVALID_COMMITMENT_ERROR)
+}
+var N = VOPRF_Unblind(G,Y,M,elt,proof)
+var y = VOPRF_Finalize(x,N)
+if (y == "error") {
   panic(CLIENT_VERIFICATION_ERROR)
 }
 
-blind := bt1.blind
-token := UnblindToken(et, blind)
-is := IssuedToken{
-  oToken: bt2.original
-  vToken: token
-}
-push(is)
+push((x,y))
 ~~~
 
 ## Redemption phase
