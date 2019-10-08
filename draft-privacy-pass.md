@@ -127,8 +127,6 @@ message.
 ## Layout
 
 - {{overview}}: A generic overview of the Privacy Pass protocol based on VOPRFs.
-- {{crypto}}: Specific cryptographic instantiations of the Privacy Pass
-  protocol.
 - {{http}}: A formulation of the Privacy Pass in the HTTP setting, including
   marshaling and data transfer specifications.
 
