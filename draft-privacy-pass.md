@@ -138,7 +138,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD",
 "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be
 interpreted as described in {{RFC2119}}.
 
-# Overview of protocol {#overview}
+# Generalized protocol overview {#overview}
 
 In this document, we will be assuming that a client (C) is attempting to
 authenticate itself in a lightweight manner to a server (S). The authentication
@@ -201,7 +201,6 @@ function PP_key_init(k, Y, id) {
     Y: ppKey.public,
     expiry: expiry,
     sig: ECDSA.sign(ecdsaSK, ppKey.public .. []byte(expiry)),
-    id: id,
   }
   return [ppKey, obj]
 }
@@ -271,6 +270,7 @@ below.
 ~~~
 {
   "server_1": {
+    "ciphersuite": ...,
     "1.0": {
       "Y": ...,
       "expiry": ...
@@ -283,6 +283,7 @@ below.
     },
   }
   "server_2": {
+    "ciphersuite": ...,
     "1.0": {
       "Y": ...,
       "expiry": ...
@@ -294,17 +295,23 @@ below.
 ~~~
 
 In this structure, "server_1" and "server_2" are separate service providers. The
-sub-members "1.0", "1.1" of "server_1" correspond to the versions of commitments
-available to the client. Increasing version numbers should correspond to newer
-keys. If "server_2" wants to upload a new commitment with version tag "1.1", it
-runs the key initialisation procedure from above and adds a new sub-member "1.1"
-with the value set to the value of the output obj. The "server_2" member should
-now take the form below.
+sub-member "ciphersuite" corresponds to the choice of VOPRF ciphersuite made by
+the server. The sub-members "1.0", "1.1" of "server_1" correspond to the
+versions of commitments available to the client. Increasing version numbers
+should correspond to newer keys. Each commitment should be a valid encoding of a
+point corresponding to the group in the VOPRF ciphersuite specified in
+"ciphersuite".
+
+If "server_2" wants to upload a new commitment with version tag "1.1", it runs
+the key initialisation procedure from above and adds a new sub-member "1.1" with
+the value set to the value of the output obj. The "server_2" member should now
+take the form below.
 
 ~~~
 {
   ...
   "server_2": {
+    "ciphersuite": ...,
     "1.0": {
       "Y": ...,
       "expiry": ...
@@ -339,7 +346,9 @@ if (!ECDSA.verify(ecdsaVK, obj.Y .. []byte(obj.expiry)) {
 }
 ~~~
 
-If "error" is not returned, then it instead returns the entire object.
+If "error" is not returned, then it instead returns the entire object. We also
+abuse notation and also use ciph = retrieve(server_id, "ciphersuite") to refer
+to retrieving the ciphersuite for the server configuration.
 
 ### Key revocation
 
@@ -354,6 +363,7 @@ below.
 {
   ...
   "server_2": {
+    "ciphersuite": ...,
     "1.0": {
       "Y": ...,
       "expiry": ...
@@ -373,19 +383,27 @@ below.
 Client's are required to check the "revoked" member for new additions when they
 poll the trusted registry for new key data.
 
-### Group instantiations
+### VOPRF ciphersuites
 
 Following the recommendations in {{OPRF}}, we assume that a server uses only one
-group instantiation at any one time. Should a server choose to change the group
-instantiation, we recommend that the server create a new identifying label (e.g.
-"server_1_${group_id}") where group_id corresponds to the identifier of the
-group. Then "server_1" revokes all keys for the previous group instantiation and
-then only offers commitments for the current label.
+VOPRF ciphersuite at any one time. Should a server choose to change some aspect
+of the ciphersuite (e.g., the group instantiation or other cryptographic
+functionality)  we recommend that the server create a new identifying label
+(e.g. "server_1_${ciphersuite_id}") where ciphersuite_id corresponds to the
+identifier of the VOPRF ciphersuite. Then "server_1" revokes all keys for the
+previous ciphersuite and then only offers commitments for the current label.
 
 An alternative arrangement would be to add a new layer of members between server
-identifiers and key versions in the JSON struct, corresponding to the group_id.
-Then the client may choose commitments from the appropriate group identifying
-member.
+identifiers and key versions in the JSON struct, corresponding to
+ciphersuite_id. Then the client may choose commitments from the appropriate
+group identifying member.
+
+We strongly recommend that service providers only operate with one group
+instantiation at any one time. If a server uses two VOPRF ciphersuites at any
+one time then this may become an avenue for segregating the user-base. User
+segregation can lead to privacy concerns relating to the utility of the
+obliviousness of the VOPRF protocol (as raised in {{OPRF}}). We discuss this
+more in ...
 
 ### ECDSA key material
 
@@ -422,13 +440,13 @@ of the protocol below.
 ~~~
 C(x)                                 S(ppKey)
 ----------------------------------------------------------------------
-
+var ciph = retrieve(S.id, "ciphersuite")
 var (r,M) = VOPRF_Blind(x)
 
                        []byte(M)
                   ------------------>
 
-                                        (Z,D) = VOPRF_Eval(ppKey.private,G,Y,M)
+                                        (Z,D) = VOPRF_Eval(ppKey.private,ciph.G,Y,M)
                                         var resp = {
                                           element: []byte(Z),
                                           proof: []byte(D),
@@ -451,65 +469,58 @@ if (y == "error") {
   panic(CLIENT_VERIFICATION_ERROR)
 }
 
-push((x,y))
+push((ciph,x,y))
 ~~~
+
+In the diagram above, the client knows the VOPRF ciphersuite supported by the
+server when it retrieves in the first step. It uses this information to
+correctly perform group operations before sending the first message.
 
 ## Redemption phase
 
-The redemption phase allows the client to reauthenticate to the server, using a
-token that it has received from a previous issuance phase. The security of the
-VOPRF ensures that the client's identity cannot be linked to any of the previous
-issuance phases.
+The redemption phase allows the client to reauthenticate to the server, using
+data that it has received from a previous issuance phase. By the security of the
+VOPRF, even revealing the original input x that is used in the issuance phase
+does not affect the privacy of the client. In other words, no server should be
+able to link a client redemption request to any particular with issuance phase,
+except for negligible probability.
 
 ~~~
-C                                     S
+C()                                     S(ppKey)
 ----------------------------------------------------------------------
-                                      key
-
-                    key.id
-              <-------------------
-
-public := get(id)
-if (public == nil) {
-  panic(UNKNOWN_PK_ERROR)
+var ciph1 = retrieve(S.id, "ciphersuite")
+a = pop()
+while (a != undefined) {
+  (ciph2,x,y) = a
+  if (ciph1 != ciph2) {
+    // ciphersuites do not match
+    a = pop()
+    continue
+  }
 }
-params := params.public
+if (!a) {
+  // no valid data to redeem
+  return
+}
 
-obj := pop(id)
-ot := obj.oToken
-vt := obj.vToken
-rd := Redeem(ot, vt)
-
-                        rd
+                       (x,y)
               -------------------->
 
-                                      d := get(token)
-                                      resp := true
-                                      err := nil
+                                      T = H1(x)
+                                      N' = OPRF_Eval(ppKey.private, T)
+                                      y' = OPRF_Finalize(x, N')
+                                      resp = (y' == y) ? "success" : "failure"
 
-                                      if (d) {
-                                        resp = false
-                                        err = DOUBLE_SPEND_ERROR
-                                      }
-
-                                      if (resp) {
-                                        b := RedeemVerify(rd, key)
-                                        if (!b) {
-                                          resp = false
-                                          err = SERVER_VERIFICATION_ERROR
-                                        }
-                                      }
-
-                                      set(token, true)
-                                      rr := RedemptionResp{
-                                        resp: resp
-                                        err: err
-                                      }
-
-                        rr
+                       resp
               <--------------------
 
+output resp
 ~~~
+
+Note that the server uses the API provided by OPRF_Eval and OPRF_Finalize,
+rather than the corresponding VOPRF functions. This is because the VOPRF
+functions also compute zero-knowledge proof data that we do not require at this
+stage of the protocol.
 
 # Cryptographic instantiation {#crypto}
 
