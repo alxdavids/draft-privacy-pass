@@ -271,21 +271,21 @@ below.
     "ciphersuite": ...,
     "1.0": {
       "Y": ...,
-      "expiry": ...
-      "sig": ...
+      "expiry": ...,
+      "sig": ...,
     },
     "1.1": {
       "Y": ...,
-      "expiry": ...
-      "sig": ...
+      "expiry": ...,
+      "sig": ...,
     },
   }
   "server_2": {
     "ciphersuite": ...,
     "1.0": {
       "Y": ...,
-      "expiry": ...
-      "sig": ...
+      "expiry": ...,
+      "sig": ...,
     },
   },
   ...
@@ -312,13 +312,13 @@ take the form below.
     "ciphersuite": ...,
     "1.0": {
       "Y": ...,
-      "expiry": ...
-      "sig": ...
+      "expiry": ...,
+      "sig": ...,
     },
     "1.1": {
       "Y": ...,
-      "expiry": ...
-      "sig": ...
+      "expiry": ...,
+      "sig": ...,
     },
   },
   ...
@@ -364,13 +364,13 @@ below.
     "ciphersuite": ...,
     "1.0": {
       "Y": ...,
-      "expiry": ...
-      "sig": ...
+      "expiry": ...,
+      "sig": ...,
     },
     "1.1": {
       "Y": ...,
-      "expiry": ...
-      "sig": ...
+      "expiry": ...,
+      "sig": ...,
     },
     "revoked": [ "1.0" ],
   },
