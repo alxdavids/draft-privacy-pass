@@ -522,11 +522,6 @@ rather than the corresponding VOPRF functions. This is because the VOPRF
 functions also compute zero-knowledge proof data that we do not require at this
 stage of the protocol.
 
-# Cryptographic instantiation {#crypto}
-
-TODO: give cryptographic description of VOPRF from generic protocol based on
-{{OPRF}}.
-
 # HTTP instantiation {#http}
 
 TODO: give a specific instantiation of the protocol in the HTTP setting.
