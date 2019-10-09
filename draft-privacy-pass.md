@@ -133,7 +133,7 @@ one of the bytes. For two objects x and y, we denote the concatenation of the
 bytes of these objects by (bytes(x) .. bytes(y)). We assume that all bytes are
 first base64-encoded before they are sent as part of a protocol message.
 
-We use the notation [ Ti ] to indicate an array of objects T1, ... , TQ where
+We use the notation `[ Ti ]` to indicate an array of objects T1, ... , TQ where
 the size of the array is Q, and the size of Q is implicit from context.
 
 ## Layout
@@ -200,11 +200,11 @@ bytes(Y) and ppKey.group = id.
 The server creates a JSON object of the form below.
 
 ~~~ json
-{
-  "Y": pp_key.public,
-  "expiry": <expiry_date>,
-  "sig": <signature>
-}
+  {
+    "Y": pp_key.public,
+    "expiry": <expiry_date>,
+    "sig": <signature>
+  }
 ~~~
 
 The field "expiry" corresponds to an expiry date for the newly sampled key. We
@@ -217,19 +217,19 @@ summarize the creation of this object using the algorithm PP_key_init(), which
 we define below.
 
 ~~~ js
-function PP_key_init(k, Y, id) {
-  ppKey.private = bytes(k)
-  ppKey.public = bytes(Y)
-  ppKey.group = id
-  var today = new Date()
-  var expiry = today.setMonth(today.getMonth() + n);
-  var obj = {
-    Y: ppKey.public,
-    expiry: expiry,
-    sig: ECDSA.sign(ecdsaSK, ppKey.public .. bytes(expiry)),
+  function PP_key_init(k, Y, id) {
+    ppKey.private = bytes(k)
+    ppKey.public = bytes(Y)
+    ppKey.group = id
+    var today = new Date()
+    var expiry = today.setMonth(today.getMonth() + n);
+    var obj = {
+      Y: ppKey.public,
+      expiry: expiry,
+      sig: ECDSA.sign(ecdsaSK, ppKey.public .. bytes(expiry)),
+    }
+    return [ppKey, obj]
   }
-  return [ppKey, obj]
-}
 ~~~
 
 Note that the variable n above should correspond to the number of months ahead
@@ -238,22 +238,22 @@ that the expiry date should correspond to.
 We give a diagrammatic representation of the initialisation phase below.
 
 ~~~
-C(ecdsaVK)                                        S(ecdsaSK)
-----------------------------------------------------------------------
-                                                  l = GROUP_PARAMS[id]
-                                                  (k,Y,p) = VOPRF_Setup(l)
-                                                  [ppKey,obj] = PP_key_init(k,Y,id)
+    C(ecdsaVK)                                S(ecdsaSK)
+    ----------------------------------------------------------------------
+                                              l = GROUP_PARAMS[id]
+                                              (k,Y,p) = VOPRF_Setup(l)
+                                              [ppKey,obj] = PP_key_init(k,Y,id)
 
-                                     obj
-                            <-------------------
+                                obj
+                        <-------------------
 
-public := key.public
-if (!ECDSA.verify(ecdsaVK, obj.Y .. bytes(obj.expiry)) {
-  panic(ECDSA_VERIFICATION_FAILED)
-} else if (!(new Date() < obj.expiry)) {
-  panic(COMMITMENT_EXPIRED_ERROR)
-}
-store(obj.id, obj.public)                            push(key)
+    public := key.public
+    if (!ECDSA.verify(ecdsaVK, obj.Y .. bytes(obj.expiry)) {
+      panic(ECDSA_VERIFICATION_FAILED)
+    } else if (!(new Date() < obj.expiry)) {
+      panic(COMMITMENT_EXPIRED_ERROR)
+    }
+    store(obj.id, obj.public)                            push(key)
 ~~~
 
 The variable obj essentially corresponds to a cryptographic commitment to the
@@ -294,30 +294,30 @@ Concretely, we recommend that the trusted registry is a JSON file of the form
 below.
 
 ~~~ json
-{
-  "server_1": {
-    "ciphersuite": ...,
-    "1.0": {
-      "Y": ...,
-      "expiry": ...,
-      "sig": ...,
+  {
+    "server_1": {
+      "ciphersuite": ...,
+      "1.0": {
+        "Y": ...,
+        "expiry": ...,
+        "sig": ...,
+      },
+      "1.1": {
+        "Y": ...,
+        "expiry": ...,
+        "sig": ...,
+      },
+    }
+    "server_2": {
+      "ciphersuite": ...,
+      "1.0": {
+        "Y": ...,
+        "expiry": ...,
+        "sig": ...,
+      },
     },
-    "1.1": {
-      "Y": ...,
-      "expiry": ...,
-      "sig": ...,
-    },
+    ...
   }
-  "server_2": {
-    "ciphersuite": ...,
-    "1.0": {
-      "Y": ...,
-      "expiry": ...,
-      "sig": ...,
-    },
-  },
-  ...
-}
 ~~~
 
 In this structure, "server_1" and "server_2" are separate service providers. The
@@ -334,23 +334,23 @@ the value set to the value of the output obj. The "server_2" member should now
 take the form below.
 
 ~~~ json
-{
-  ...
-  "server_2": {
-    "ciphersuite": ...,
-    "1.0": {
-      "Y": ...,
-      "expiry": ...,
-      "sig": ...,
+  {
+    ...
+    "server_2": {
+      "ciphersuite": ...,
+      "1.0": {
+        "Y": ...,
+        "expiry": ...,
+        "sig": ...,
+      },
+      "1.1": {
+        "Y": ...,
+        "expiry": ...,
+        "sig": ...,
+      },
     },
-    "1.1": {
-      "Y": ...,
-      "expiry": ...,
-      "sig": ...,
-    },
-  },
-  ...
-}
+    ...
+  }
 ~~~
 
 
@@ -365,11 +365,11 @@ We implicitly assume that this function performs the following verification
 checks:
 
 ~~~ lua
-if (!ECDSA.verify(ecdsaVK, obj.Y .. bytes(obj.expiry)) {
-  return "error"
-} else if (!(new Date() < obj.expiry)) {
-  return "error"
-}
+  if (!ECDSA.verify(ecdsaVK, obj.Y .. bytes(obj.expiry)) {
+    return "error"
+  } else if (!(new Date() < obj.expiry)) {
+    return "error"
+  }
 ~~~
 
 If "error" is not returned, then it instead returns the entire object. We also
@@ -386,24 +386,24 @@ Any future revocations can simply be appended to this array. For an example, see
 below.
 
 ~~~ json
-{
-  ...
-  "server_2": {
-    "ciphersuite": ...,
-    "1.0": {
-      "Y": ...,
-      "expiry": ...,
-      "sig": ...,
+  {
+    ...
+    "server_2": {
+      "ciphersuite": ...,
+      "1.0": {
+        "Y": ...,
+        "expiry": ...,
+        "sig": ...,
+      },
+      "1.1": {
+        "Y": ...,
+        "expiry": ...,
+        "sig": ...,
+      },
+      "revoked": [ "1.0" ],
     },
-    "1.1": {
-      "Y": ...,
-      "expiry": ...,
-      "sig": ...,
-    },
-    "revoked": [ "1.0" ],
-  },
-  ...
-}
+    ...
+  }
 ~~~
 
 Client's are required to check the "revoked" member for new additions when they
@@ -465,38 +465,39 @@ is a random oracle that outputs elements in GG. The client stores (x, y) as
 recommended in {{OPRF}}. We give a diagrammatic overview of the protocol below.
 
 ~~~
-C(x, aux)                                 S(ppKey)
-----------------------------------------------------------------------
-var ciph = retrieve(S.id, "ciphersuite")
-var (r,M) = VOPRF_Blind(x)
+    C(x, aux)                                 S(ppKey)
+    ----------------------------------------------------------------------
+    var ciph = retrieve(S.id, "ciphersuite")
+    var (r,M) = VOPRF_Blind(x)
 
-                       bytes(M)
-                  ------------------>
+                          bytes(M)
+                      ------------------>
 
-                                        (Z,D) = VOPRF_Eval(ppKey.private,ciph.G,Y,M)
-                                        var resp = {
-                                          element: bytes(Z),
-                                          proof: bytes(D),
-                                          version: "key_version",
-                                        }
+                                            (Z,D) = VOPRF_Eval(ppKey.private,
+                                                ciph.G,Y,M)
+                                            var resp = {
+                                              element: bytes(Z),
+                                              proof: bytes(D),
+                                              version: "key_version",
+                                            }
 
-                          resp
-                  <------------------
+                              resp
+                      <------------------
 
-var elt = resp.element
-var proof = resp.proof
-var version = resp.version
-var obj = retrieve(S.id, version)
-if obj == "error" {
-  panic(INVALID_COMMITMENT_ERROR)
-}
-var N = VOPRF_Unblind(G,Y,M,elt,proof)
-var y = VOPRF_Finalize(x,N,aux)
-if (y == "error") {
-  panic(CLIENT_VERIFICATION_ERROR)
-}
+    var elt = resp.element
+    var proof = resp.proof
+    var version = resp.version
+    var obj = retrieve(S.id, version)
+    if obj == "error" {
+      panic(INVALID_COMMITMENT_ERROR)
+    }
+    var N = VOPRF_Unblind(G,Y,M,elt,proof)
+    var y = VOPRF_Finalize(x,N,aux)
+    if (y == "error") {
+      panic(CLIENT_VERIFICATION_ERROR)
+    }
 
-push((ciph,x,y,aux))
+    push((ciph,x,y,aux))
 ~~~
 
 In the diagram above, the client knows the VOPRF ciphersuite supported by the
@@ -513,39 +514,41 @@ able to link a client redemption request to any particular with issuance phase,
 except for negligible probability.
 
 ~~~
-C()                                     S(ppKey)
-----------------------------------------------------------------------
-var ciph1 = retrieve(S.id, "ciphersuite")
-a = pop()
-while (a != undefined) {
-  (ciph2,x,y,aux) = a
-  if (ciph1 != ciph2) {
-    // ciphersuites do not match
+    C()                                     S(ppKey)
+    ----------------------------------------------------------------------
+    var ciph1 = retrieve(S.id, "ciphersuite")
     a = pop()
-    continue
-  }
-}
-if (!a) {
-  // no valid data to redeem
-  return
-}
+    while (a != undefined) {
+      (ciph2,x,y,aux) = a
+      if (ciph1 != ciph2) {
+        // ciphersuites do not match
+        a = pop()
+        continue
+      }
+    }
+    if (!a) {
+      // no valid data to redeem
+      return
+    }
 
-                    (x,y,aux)
-              -------------------->
+                        (x,y,aux)
+                  -------------------->
 
-                                      if (store.includes(x)) {
-                                        panic(DOUBLE_SPEND_ERROR)
-                                      }
-                                      T = H1(x)
-                                      N' = OPRF_Eval(ppKey.private, T)
-                                      y' = OPRF_Finalize(x,N',aux)
-                                      resp = (y' == y) ? "success" : "failure"
-                                      store.push(x)
+                                          if (store.includes(x)) {
+                                            panic(DOUBLE_SPEND_ERROR)
+                                          }
+                                          T = H1(x)
+                                          N' = OPRF_Eval(ppKey.private, T)
+                                          y' = OPRF_Finalize(x,N',aux)
+                                          resp = (y' == y)
+                                              ? "success"
+                                              : "failure"
+                                          store.push(x)
 
-                      resp
-              <--------------------
+                          resp
+                  <--------------------
 
-output resp
+    output resp
 ~~~
 
 Note that the server uses the API provided by OPRF_Eval and OPRF_Finalize,
@@ -613,29 +616,31 @@ fetchTrustTokens("/request-tokens").then(...)
 
 This API function will perform the following operations:
 
-- Generate a set of random nonces denoted x1, ... , xQ as separate Buffer
-  objects.
-- Runs VOPRF_Blind(xi) for i in 1...Q and parses the response as a pair of
-  Buffers denoted by (ri,Mi). Each Mi is a valid encoding of a group element
-  {{encoding}} as a Buffer object.
-- Create a HTTP request with the following set:
-  - method: POST
-  - path: /request-tokens
-  - body: {"data":[ base64(M1), ... , base64(MQ) ]}
-- Send the HTTP request.
+~~~
+    - Generate a set of random nonces denoted x1, ... , xQ as separate Buffer
+      objects.
+    - Runs VOPRF_Blind(xi) for i in 1...Q and parses the response as a pair of
+      Buffers denoted by (ri,Mi). Each Mi is a valid encoding of a group element
+      {{encoding}} as a Buffer object.
+    - Create a HTTP request with the following set:
+      - method: POST
+      - path: /request-tokens
+      - body: {"data":[ base64(M1), ... , base64(MQ) ]}
+    - Send the HTTP request.
+~~~
 
 The HTTP response for a successfully processed request should be of the form
 below.
 
 ~~~
-    status: 200
-    body: {
-      "result": {
-        "tokens":[ base64(Z1), ... , base64(ZQ) ],
-        "proof":[ base64(D1), ... base64(DQ) ],
-        "version":"1.0"
-      }
+  status: 200
+  body: {
+    "result": {
+      "tokens":[ base64(Z1), ... , base64(ZQ) ],
+      "proof":[ base64(D1), ... base64(DQ) ],
+      "version":"1.0"
     }
+  }
 ~~~
 
 The key version "1.0" here should be set to the version string used by O for the
@@ -646,13 +651,13 @@ each of these into a single proof object at the expense of slightly more
 server-side computation. The modified batched response is given below.
 
 ~~~
-    body: {
-      "result": {
-        "tokens":[ base64(Z1), ... , base64(ZQ) ],
-        "proof":base64(D),
-        "version":"1.0"
-      }
+  body: {
+    "result": {
+      "tokens":[ base64(Z1), ... , base64(ZQ) ],
+      "proof":base64(D),
+      "version":"1.0"
     }
+  }
 ~~~
 
 In the following, we will assume that proof objects are not batched for
@@ -700,16 +705,18 @@ fetchTrustAttestation("issuer.com", {"policy":["use-cache","refresh"]}).then(...
 If there are no tokens available for O, then the promise rejects. Otherwise the
 API functionality invokes the following operations in the browser.
 
-- Obtain (x,N) from the per-origin Privacy Pass storage for O
-- Generate a random string denoted by nonce.
-- Let rb be a Buffer containing the concatenation of the following bytes:
-  - bytes("issuer.com") .. bytes("vendor.com") .. bytes(nonce).
-- Run y = VOPRF_Finalize(x,N,rb)
-- Create a HTTP request with the following information:
-  - method: POST
-  - path: /redeem-tokens
-  - body: {"data":y,"bindings":[ "issuer.com", "vendor.com", nonce ]}
-- Send the HTTP request to O.
+~~~
+    - Obtain (x,N) from the per-origin Privacy Pass storage for O
+    - Generate a random string denoted by nonce.
+    - Let rb be a Buffer containing the concatenation of the following bytes:
+      - bytes("issuer.com") .. bytes("vendor.com") .. bytes(nonce).
+    - Run y = VOPRF_Finalize(x,N,rb)
+    - Create a HTTP request with the following information:
+      - method: POST
+      - path: /redeem-tokens
+      - body: {"data":y,"bindings":[ "issuer.com", "vendor.com", nonce ]}
+    - Send the HTTP request to O.
+~~~
 
 The HTTP response for a successful request should take the following form.
 
