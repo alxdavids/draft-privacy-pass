@@ -138,6 +138,12 @@ the size of the array is Q, and the size of Q is implicit from context.
 - {{overview}}: A generic overview of the Privacy Pass protocol based on VOPRFs.
 - {{browser}}: Instructions on how to integrate the Privacy Pass protocol into
   the browser setting.
+- {{exts}}: Extensions to the Privacy Pass protocol and browser integration that
+  allow for more specific functionality.
+- {{security}}: Security considerations and recommendations arising from the
+  usage of the Privacy Pass protocol.
+- {{encoding}}: Valid data encodings for all objects that are in transit during
+  the protocol.
 
 ## Requirements
 
@@ -157,7 +163,7 @@ In this section, we will give a broad overview of how the Privacy Pass protocol
 functions in achieving these goals. The generic protocol can be split into three
 phases: initialisation, issuance and redemption. As we mentioned previously, the
 first two stages are essentially identical to the setup and evaluation phases of
-the VOPRF in {{VOPRF}}. The last stage, redemption, corresponds to the client
+the VOPRF in {{OPRF}}. The last stage, redemption, corresponds to the client
 revealing their secret input data during the VOPRF protocol to the server. The
 server can use this data to confirm that the client has a valid VOPRF output,
 without being able to link the data to any individual issuance phase.
@@ -715,16 +721,16 @@ If O has an embedded iframe in OV, and would like to refresh the SRR that C
 holds, it can use the "policy" settings of "fetchTrustAttestation" to refresh
 the SRR that the client holds.
 
-# Extensions
+# Extensions {#exts}
 
 TODO: Discuss some of the extensions highlighted in
 <https://github.com/WICG/trust-token-api>.
 
-# Security considerations
+# Security considerations {#security}
 
 TODO: Discuss security considerations from {{OPRF}},
 <https://github.com/WICG/trust-token-api>, {{DGSTV18}}.
 
-# Valid data encodings {#encodings}
+# Valid data encodings {#encoding}
 
 TODO: Discuss valid data encodings of all objects in transport.
