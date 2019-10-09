@@ -123,11 +123,11 @@ The following terms are used throughout this document.
 ## Preliminaries
 
 Throughout this draft, let D be some object corresponding to an opaque data type
-(such as a group element). We write []byte(D) to denote the encoding of this
+(such as a group element). We write bytes(D) to denote the encoding of this
 data type as raw bytes. We assume that such objects can also be interpreted as
 Buffer objects, with each internal slot in the buffer set to the value of the
 one of the bytes. For two objects x and y, we denote the concatenation of the
-bytes of these objects by ([]byte(x) .. []byte(y)). We assume that all bytes are
+bytes of these objects by (bytes(x) .. bytes(y)). We assume that all bytes are
 first base64-encoded before they are sent as part of a protocol message.
 
 We use the notation [ Ti ] to indicate an array of objects T1, ... , TQ where
@@ -140,8 +140,10 @@ the size of the array is Q, and the size of Q is implicit from context.
   the browser setting.
 - {{exts}}: Extensions to the Privacy Pass protocol and browser integration that
   allow for more specific functionality.
-- {{security}}: Security considerations and recommendations arising from the
+- {{privacy}}: Privacy considerations and recommendations arising from the
   usage of the Privacy Pass protocol.
+- {{security}}: Additional security considerations to prevent abuse of the
+  protocol from a malicious client.
 - {{encoding}}: Valid data encodings for all objects that are in transit during
   the protocol.
 
@@ -189,15 +191,15 @@ level implied by the choice of l. The server has a list of supported group
 params (GROUP_PARAMS) and chooses an identifier, id, associated with the
 preferred group configuration, and also outputs the implied length of l. It
 creates a Privacy Pass key object denoted by ppKey that has fields "private",
-"public" and "group". It sets ppKey.private = []byte(k), ppKey.public =
-[]byte(Y) and ppKey.group = id.
+"public" and "group". It sets ppKey.private = bytes(k), ppKey.public =
+bytes(Y) and ppKey.group = id.
 
 The server creates a JSON object of the form below.
 
-~~~
+~~~ json
 {
-  "Y": pp_key.public
-  "expiry": <expiry_date>
+  "Y": pp_key.public,
+  "expiry": <expiry_date>,
   "sig": <signature>
 }
 ~~~
@@ -211,17 +213,17 @@ long-term with a corresponding publicly available verification key (ecdsaVK). We
 summarize the creation of this object using the algorithm PP_key_init(), which
 we define below.
 
-~~~
+~~~ js
 function PP_key_init(k, Y, id) {
-  ppKey.private = []byte(k)
-  ppKey.public = []byte(Y)
+  ppKey.private = bytes(k)
+  ppKey.public = bytes(Y)
   ppKey.group = id
   var today = new Date()
   var expiry = today.setMonth(today.getMonth() + n);
   var obj = {
     Y: ppKey.public,
     expiry: expiry,
-    sig: ECDSA.sign(ecdsaSK, ppKey.public .. []byte(expiry)),
+    sig: ECDSA.sign(ecdsaSK, ppKey.public .. bytes(expiry)),
   }
   return [ppKey, obj]
 }
@@ -243,7 +245,7 @@ C(ecdsaVK)                                        S(ecdsaSK)
                             <-------------------
 
 public := key.public
-if (!ECDSA.verify(ecdsaVK, obj.Y .. []byte(obj.expiry)) {
+if (!ECDSA.verify(ecdsaVK, obj.Y .. bytes(obj.expiry)) {
   panic(ECDSA_VERIFICATION_FAILED)
 } else if (!(new Date() < obj.expiry)) {
   panic(COMMITMENT_EXPIRED_ERROR)
@@ -288,7 +290,7 @@ with their new commitment object.
 Concretely, we recommend that the trusted registry is a JSON file of the form
 below.
 
-~~~
+~~~ json
 {
   "server_1": {
     "ciphersuite": ...,
@@ -328,7 +330,7 @@ the key initialisation procedure from above and adds a new sub-member "1.1" with
 the value set to the value of the output obj. The "server_2" member should now
 take the form below.
 
-~~~
+~~~ json
 {
   ...
   "server_2": {
@@ -359,8 +361,8 @@ member labelled with "1.1".
 We implicitly assume that this function performs the following verification
 checks:
 
-~~~
-if (!ECDSA.verify(ecdsaVK, obj.Y .. []byte(obj.expiry)) {
+~~~ lua
+if (!ECDSA.verify(ecdsaVK, obj.Y .. bytes(obj.expiry)) {
   return "error"
 } else if (!(new Date() < obj.expiry)) {
   return "error"
@@ -380,7 +382,7 @@ version "1.0", then it appends a new "revoke" member with the array [ "1.0" ].
 Any future revocations can simply be appended to this array. For an example, see
 below.
 
-~~~
+~~~ json
 {
   ...
   "server_2": {
@@ -448,8 +450,8 @@ server. The issuance phase essentially corresponds to a VOPRF evaluation phase
 bytes from some unpredictable distribution), and runs the VOPRF evaluation phase
 with the server. The client receives an output y of the form:
 
-~~~
-    dk = H_2("voprf_derive_key", x .. []byte(N))
+~~~ lua
+    dk = H_2("voprf_derive_key", x .. bytes(N))
     y = H_2(dk, aux)
 ~~~
 
@@ -465,13 +467,13 @@ C(x, aux)                                 S(ppKey)
 var ciph = retrieve(S.id, "ciphersuite")
 var (r,M) = VOPRF_Blind(x)
 
-                       []byte(M)
+                       bytes(M)
                   ------------------>
 
                                         (Z,D) = VOPRF_Eval(ppKey.private,ciph.G,Y,M)
                                         var resp = {
-                                          element: []byte(Z),
-                                          proof: []byte(D),
+                                          element: bytes(Z),
+                                          proof: bytes(D),
                                           version: "key_version",
                                         }
 
@@ -528,10 +530,14 @@ if (!a) {
                     (x,y,aux)
               -------------------->
 
+                                      if (store.includes(x)) {
+                                        panic(DOUBLE_SPEND_ERROR)
+                                      }
                                       T = H1(x)
                                       N' = OPRF_Eval(ppKey.private, T)
                                       y' = OPRF_Finalize(x,N',aux)
                                       resp = (y' == y) ? "success" : "failure"
+                                      store.push(x)
 
                       resp
               <--------------------
@@ -544,10 +550,22 @@ rather than the corresponding VOPRF functions. This is because the VOPRF
 functions also compute zero-knowledge proof data that we do not require at this
 stage of the protocol.
 
+### Double-spend protection
+
+To protect against clients that attempt to spend a value x more than once, the
+server uses an index, store, to collect valid inputs and then check against in
+future protocols. Since this store needs to only be optimized for storage and
+querying, a structure such as a Bloom filter suffices. Importantly, the server
+must only eject this storage after a key rotation occurs since all previous
+client data will be rendered obsolete after such an event.
+
+## Error types {#errors}
+
 # Browser integrations {#browser}
 
 We discuss possible use-cases and potential APIs for using Privacy Pass in the
-browser setting.
+browser setting. We discuss security considerations arising from the
+construction of this API in {{security}}.
 
 ## Per-origin trust {#per-origin}
 
@@ -628,7 +646,7 @@ server-side computation. The modified batched response is given below.
 ~~~
     body: {
       "result": {
-        "tokens":[ base64(Z1), ... , base64(ZQ)],
+        "tokens":[ base64(Z1), ... , base64(ZQ) ],
         "proof":base64(D),
         "version":"1.0"
       }
@@ -673,7 +691,7 @@ generated at the time of redemption.
 A new Javascript API is provided that allows OV to determine whether C has Trust
 Tokens issued by O.
 
-~~~
+~~~ js
 fetchTrustAttestation("issuer.com", {"policy":["use-cache","refresh"]}).then(...)
 ~~~
 
@@ -683,7 +701,7 @@ API functionality invokes the following operations in the browser.
 - Obtain (x,N) from the per-origin Privacy Pass storage for O
 - Generate a random string denoted by nonce.
 - Let rb be a Buffer containing the concatenation of the following bytes:
-  - []byte("issuer.com") .. []byte("vendor.com") .. []byte(nonce).
+  - bytes("issuer.com") .. bytes("vendor.com") .. bytes(nonce).
 - Run y = VOPRF_Finalize(x,N,rb)
 - Create a HTTP request with the following information:
   - method: POST
@@ -720,7 +738,7 @@ as a new option in the fetch API:
 ~~~
 fetch(<resource-url>, {
   ...
-  signedRedemptionRecord: [issuer],
+  signedRedemptionRecord: "issuer.com",
   ...
 });
 ~~~
@@ -745,10 +763,184 @@ the SRR that the client holds.
 TODO: Discuss some of the extensions highlighted in
 <https://github.com/WICG/trust-token-api>.
 
+# Privacy considerations {#privacy}
+
+We intentionally encode no special information into Trust Tokens to prevent a
+vendor from learning anything about the client. We also have cryptographic
+guarantees via the VOPRF construction that a vendor can learn nothing about a
+client beyond which issuers trust it. Still there are ways that malicious
+servers can try and learn identifying information about clients that it
+interacts with.
+
+We discuss a number of privacy considerations made in {{OPRF}} that are
+relevant to the Privacy Pass protocol use-case, along with additional
+considerations arising from the browser integration.
+
+## User segregation
+
+An inherent features of using cryptographic primitives like VOPRFs is that any
+client can only remain private relative to the entire space of users using the
+protocol. In principle, we would hope that the server can link any client
+redemption to any specific issuance invocation with a probability that is
+equivalent to guessing. However, in practice, the server can increase this
+probability using a number of techniques that can segregate the user space into
+smaller sets.
+
+### Key rotation
+
+As introduced in {{OPRF}}, such techniques to introduce segregation are closely
+linked to the type of key schedule used by the server. When a server rotates
+their key, any client that invokes the issuance protocol shortly afterwards will
+be part of a small number of possible clients that can redeem. To mechanize this
+attack strategy, a server could introduce a fast key rotation policy which would
+force clients into small key windows. This would mean that client privacy would
+only have utility with respect to the smaller group of users that have Trust
+Tokens for a particular key window.
+
+In the {{OPRF}} draft it is recommended that great care is taken over key
+rotations, in particular server's should only invoke key rotation for fairly
+large periods of time such as between 1 and 12 months. Key rotations represent a
+trade-off between client privacy and continued server security. Therefore, it is
+still important that key rotations occur on a fairly regular cycle to reduce the
+harmfulness of a server key compromise.
+
+Trusted registries for holding Privacy Pass key commitments can be useful in
+policing the key schedule that a server uses. Each key must have a corresponding
+commitment in this registry so that clients can verify issuance responses from
+servers. Clients may choose to inspect the history of the registry before first
+accepting Trust Tokens from the server. If a server has updated the registry
+with many unexpired keys, or in very quick intervals a client can choose to
+reject the tokens.
+
+TODO: Can client's flag bad server practices?
+
+### Large numbers of issuers {#issuers}
+
+Similarly to the key rotation issue raised above, if there are a large number of
+issuers, similar user segregation can occur. In the proposed browser
+integration, a vendor OV can choose to invoke trust attestations for more than
+one issuer. Each SRR that a client holds essentially corresponds to a bit of
+information about the client that OV can learn. Therefore, there is an
+exponential loss in privacy relative to the number of issuers that there are.
+
+For example, if there are 32 issuers, then OV learns 32 bits of information
+about the client. If the distribution of issuer trust is anything close to a
+uniform distribution, then this is likely to uniquely identify any client
+amongst all other internet users. Assuming a uniform distribution is clearly the
+worst-case scenario, and unlikely to be accurate, but it provides a stark
+warning against allowing too many issuers at any one time.
+
+#### Selected trusted registries
+
+One recommendation is that only a fixed number (TODO: how many?) of issuers are
+sanctioned to provide Trust Tokens at any one time. This could be enforced by
+the trusted registry that is being used. Client's can then choose which
+registries to trust and only accept Trust Tokens from issuers accepted into
+those registries.
+
+#### Maximum number of issuers inferred by client
+
+A second recommendation is that clients only store Trust Tokens for a fixed
+number of issuers at any one time. This would prevent a malicious vendor from
+being able to invoke redemptions for many issuers since the client would only be
+holding Trust Tokens for a small set of issuers. When a client is issued tokens
+from a new issuer and already has tokens from the maximum number of issuers, it
+simply deletes the oldest set of Trust Tokens in storage and then stores the
+newly acquired tokens.
+
+#### Enforcing limits on per-origin issuances and redemptions
+
+Finally it may be possible for browsers to enforce a strict limit on the number
+of redemption requests that can be made by a vendor. Such limits may also be
+worthwhile enforcing for the number issuances that can be invoked per origin.
+
+The number of redemptions and issuances that have occurred can be persisted in
+browser storage either related to the origin, or via temporal information. This
+would prevent certain origins from being able to invoke numerous instances of
+either protocol phase.
+
+## Tracking and identity leakage
+
+While Trust Tokens themselves encode no information about the client redeeming
+them, there may be problems if we allow too many redemptions on a single page.
+For instance, the first-party cookie for user U on domain A can be encoded in
+the trust token information channel and decoded on domain B, allowing domain B
+to learn the user's domain A cookie until either first-party cookie is cleared.
+
+Mitigations for this issue are similar to those proposed in {{issuers}} for
+tackling the problem of having large number of issuers.
+
+Moreover, cached SRRs and their associated browser public keys have a similar
+tracking potential to first party cookies. Therefore these should be clearable
+by browser’s existing Clear Site Data functionality.The SRR and its public key
+are untamperable first-party tracking vectors. They allow sites to share their
+first-party user identity with third parties on the page in a verifiable way. To
+mitigate this potentially undesirable situation, user agents can request
+multiple SRRs in a single token redemption, each bound to different key pairs,
+and use different SRRs and key pairs when performing requests based on the
+third-party or over time.
+
+In order to prevent the issuer from binding together multiple simultaneous
+redemptions, the UA can blind the key pairs before sending them to the issuer.
+Additionally, the client may need to produce signed timestamps to prevent the
+issuer from using the timestamp as another matching method.
+
 # Security considerations {#security}
 
-TODO: Discuss security considerations from {{OPRF}},
-<https://github.com/WICG/trust-token-api>, {{DGSTV18}}.
+We present a number of security considerations that prevent a malicious actors
+from abusing the protocol.
+
+## Double-spend protection
+
+All issuing server should implement a robust storage-query mechanism for
+checking that tokens sent by clients have not been spent before. Such tokens
+only need to be checked for each issuer individually. But all issuers must
+perform global double-spend checks to avoid clients from exploiting the
+possibility of spending tokens more than once against distributed token checking
+systems. For the same reason, the global data storage must have quick update
+times. While an update is occurring it may be possible for a malicious client to
+spend a token more than once.
+
+## Key rotation
+
+We highlighted previously that short key-cycles can be used to reduce client
+privacy. However, regular key rotations are still recommended to maintain good
+server key hygiene. The key material that we consider to be important are:
+
+- the VOPRF key;
+- the signing key used to sign commitment information;
+- the signing key used to sign SRRs.
+
+In summary, our recommendations are that VOPRF keys are rotated from anywhere
+between a month and a single year. With an active user-base, a month gives a
+fairly large window for clients to participate in the Privacy Pass protocol and
+thus enjoy the privacy guarantees of being part of a larger group. The low
+ceiling of a year prevents a key compromise from being too destructive. If a
+server realizes that a key compromise has occurred then the server should revoke
+the previous key in the trusted registry and specify a new key to be used.
+
+For the two signing keys, these should both be well-known keys associated with
+the issuer (TODO: where should they be stored?). Issuers may choose to use the
+same key for both signing purposes. The rotation schedules for these keys can be
+much longer, if necessary.
+
+## Token exhaustion
+
+To prevent a vendor from exhausting all the tokens that a client for a given (or
+multiple) issuers, we recommend the following mitigations.
+
+- Issuers issue many tokens at once, so users have a large supply of tokens.
+- Browsers will only ever redeem one token per top-level page view, so it will
+  take many page views to deplete the full supply.
+- The browser will cache SRRs per-origin and only refresh them when an issuer
+  iframe opts-in, so malicious origins won't deplete many tokens. The
+  "freshness" of the SRR becomes an additional trust signal.
+- Browsers may choose to limit redemptions on a time-based schedule, and either
+  return cached SRRs if available, or require consumers to cache the SRR.
+- Issuers will be able to see the Referer, subject to the page's referrer
+  policy, for any token redemption, so they'll be able to detect if any one site
+  is redeeming suspiciously many tokens.
+
 
 # Valid data encodings {#encoding}
 
