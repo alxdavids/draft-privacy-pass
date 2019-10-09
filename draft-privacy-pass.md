@@ -585,7 +585,7 @@ The API that we detail is based on the API first detailed
 #### API
 
 When O wants to provide trust tokens to C, they use a Javascript API that
-invokes Fetch:
+invokes fetch:
 
 ~~~
 fetchTrustTokens("/request-tokens").then(...)
@@ -608,9 +608,14 @@ The HTTP response for a successfully processed request should be of the form
 below.
 
 ~~~
-- status: 200
-- body: {"result":{"tokens":[ base64(Z1), ... , base64(ZQ) ],"proof":[
-  base64(D1), ... base64(DQ) ],"version":"1.0"}}
+    status: 200
+    body: {
+      "result": {
+        "tokens":[ base64(Z1), ... , base64(ZQ) ],
+        "proof":[ base64(D1), ... base64(DQ) ],
+        "version":"1.0"
+      }
+    }
 ~~~
 
 The key version "1.0" here should be set to the version string used by O for the
@@ -621,7 +626,13 @@ each of these into a single proof object at the expense of slightly more
 server-side computation. The modified batched response is given below.
 
 ~~~
-- body: {"result":{"tokens":[ base64(Z1), ... , base64(ZQ)],"proof":base64(D),"version":"1.0"}}
+    body: {
+      "result": {
+        "tokens":[ base64(Z1), ... , base64(ZQ)],
+        "proof":base64(D),
+        "version":"1.0"
+      }
+    }
 ~~~
 
 In the following, we will assume that proof objects are not batched for
@@ -682,8 +693,16 @@ API functionality invokes the following operations in the browser.
 
 The HTTP response for a successful request should take the following form.
 
-- status: 200
-- body: {"result":{"timestamp":"2019-10-09-11:06:11","top-level":"vendor.com"},"signature":sig}
+~~~
+    status: 200
+    body: {
+      "result": {
+        "timestamp":"2019-10-09-11:06:11",
+        "top-level":"vendor.com",
+      },
+      "signature":sig,
+    }
+~~~
 
 The "timestamp" field should be set to the time that the server processed the
 redemption request, "top-level" is set to the top-level origin OV host value.
