@@ -23,6 +23,9 @@ author:
 
 normative:
   RFC2119:
+  TRUST:
+    title: Trust Token API
+    target: https://github.com/WICG/trust-token-api#security-considerations
   DGSTV18:
     title: Privacy Pass, Bypassing Internet Challenges Anonymously
     target: https://www.degruyter.com/view/j/popets.2018.2018.issue-3/popets-2018-0026/popets-2018-0026.xml
@@ -584,8 +587,7 @@ learn whether the issuer trusts the client. This allows the third-party to
 inform their own decision-making about the client, without harming their
 privacy.
 
-The API that we detail is based on the API first detailed
-[here](https://github.com/WICG/trust-token-api).
+The API that we detail is based on the API first detailed in {{TRUST}}.
 
 ### Issuance
 
@@ -760,8 +762,7 @@ the SRR that the client holds.
 
 # Extensions {#exts}
 
-TODO: Discuss some of the extensions highlighted in
-<https://github.com/WICG/trust-token-api>.
+TODO: Discuss some of the extensions highlighted in {{TRUST}}.
 
 # Privacy considerations {#privacy}
 
