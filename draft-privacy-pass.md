@@ -813,7 +813,7 @@ server key hygiene. The key material that we consider to be important are:
 
 - the VOPRF key;
 - the signing key used to sign commitment information;
-- the signing key used to sign SRRs.
+- the signing key used to sign SRRs in the SIAV configuration.
 
 In summary, our recommendations are that VOPRF keys are rotated from anywhere
 between a month and a single year. With an active user-base, a month gives a
