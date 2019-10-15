@@ -139,10 +139,8 @@ the size of the array is Q, and the size of Q is implicit from context.
 ## Layout
 
 - {{overview}}: A generic overview of the Privacy Pass protocol based on VOPRFs.
-- {{browser}}: Instructions on how to integrate the Privacy Pass protocol into
-  the browser setting.
-- {{exts}}: Extensions to the Privacy Pass protocol and browser integration that
-  allow for more specific functionality.
+- {{exts}}: Extensions to the Privacy Pass protocol that allow for more specific
+  functionality.
 - {{privacy}}: Privacy considerations and recommendations arising from the
   usage of the Privacy Pass protocol.
 - {{security}}: Additional security considerations to prevent abuse of the
@@ -260,190 +258,10 @@ The variable obj essentially corresponds to a cryptographic commitment to the
 server's VOPRF key. We abstract all signing and verification of ECDSA signatures
 into the ECDSA.sign and ECDSA.verify functionality {{DSS}}.
 
-### Trusted registry
-
-Rather than sending the result of the key initialisation procedure directly to
-each client, it is preferable to upload the object obj to a trusted,
-tamper-proof, history-preserving registry. By trusted, we mean from the
-perspective of clients that use the Privacy Pass protocol. Any new keys uploaded
-to the registry should be appended to the list. Any keys that have expired can
-optionally be labelled as so, but should never be removed. A trusted registry
-may hold key commitments for multiple Privacy Pass service providers (servers).
-
-Clients can either choose to:
-
-- poll the trusted registry and import new keys, rejecting any that throw
-  errors;
-- retrieve the commitments for the server at the time at which they are used,
-  throwing errors if no valid commitment is available.
-
-To prevent unauthorized modification of the trusted registry, server's should be
-required to identify and authenticate themselves before they can append data to
-their configuration. Moreover, only parts of the registry that correspond to the
-servers configuration can be modifiable.
-
-### Key rotation
-
-Whenever a server seeks to rotate their key, they must append their key to the
-trusted registry. We recommend that the trusted registry is arranged as a JSON
-blob with a member for each JSON provider. Each provider appends new keys by
-creating a new sub-member corresponding to an incremented version label along
-with their new commitment object.
-
-Concretely, we recommend that the trusted registry is a JSON file of the form
-below.
-
-~~~ json
-  {
-    "server_1": {
-      "ciphersuite": ...,
-      "1.0": {
-        "Y": ...,
-        "expiry": ...,
-        "sig": ...,
-      },
-      "1.1": {
-        "Y": ...,
-        "expiry": ...,
-        "sig": ...,
-      },
-    }
-    "server_2": {
-      "ciphersuite": ...,
-      "1.0": {
-        "Y": ...,
-        "expiry": ...,
-        "sig": ...,
-      },
-    },
-    ...
-  }
-~~~
-
-In this structure, "server_1" and "server_2" are separate service providers. The
-sub-member "ciphersuite" corresponds to the choice of VOPRF ciphersuite made by
-the server. The sub-members "1.0", "1.1" of "server_1" correspond to the
-versions of commitments available to the client. Increasing version numbers
-should correspond to newer keys. Each commitment should be a valid encoding of a
-point corresponding to the group in the VOPRF ciphersuite specified in
-"ciphersuite".
-
-If "server_2" wants to upload a new commitment with version tag "1.1", it runs
-the key initialisation procedure from above and adds a new sub-member "1.1" with
-the value set to the value of the output obj. The "server_2" member should now
-take the form below.
-
-~~~ json
-  {
-    ...
-    "server_2": {
-      "ciphersuite": ...,
-      "1.0": {
-        "Y": ...,
-        "expiry": ...,
-        "sig": ...,
-      },
-      "1.1": {
-        "Y": ...,
-        "expiry": ...,
-        "sig": ...,
-      },
-    },
-    ...
-  }
-~~~
-
-
-### Client retrieval
-
-We define a function retrieve(server_id, version_id) which retrieves the
-commitment with version label equal to version_id, for the provider denoted by
-the string server_id. For example, retrieve("server_1","1.1") will retrieve the
-member labelled with "1.1".
-
-We implicitly assume that this function performs the following verification
-checks:
-
-~~~ lua
-  if (!ECDSA.verify(ecdsaVK, obj.Y .. bytes(obj.expiry)) {
-    return "error"
-  } else if (!(new Date() < obj.expiry)) {
-    return "error"
-  }
-~~~
-
-If "error" is not returned, then it instead returns the entire object. We also
-abuse notation and also use ciph = retrieve(server_id, "ciphersuite") to refer
-to retrieving the ciphersuite for the server configuration.
-
-### Key revocation
-
-If a server must revoke a key, then it uses a separate member with label
-"revoke" corresponding to an array of revoke versions associated with key
-commitments. In the above example, if "server_2" needs to revoke the key with
-version "1.0", then it appends a new "revoke" member with the array [ "1.0" ].
-Any future revocations can simply be appended to this array. For an example, see
-below.
-
-~~~ json
-  {
-    ...
-    "server_2": {
-      "ciphersuite": ...,
-      "1.0": {
-        "Y": ...,
-        "expiry": ...,
-        "sig": ...,
-      },
-      "1.1": {
-        "Y": ...,
-        "expiry": ...,
-        "sig": ...,
-      },
-      "revoked": [ "1.0" ],
-    },
-    ...
-  }
-~~~
-
-Client's are required to check the "revoked" member for new additions when they
-poll the trusted registry for new key data.
-
-### VOPRF ciphersuites
-
-Following the recommendations in {{OPRF}}, we assume that a server uses only one
-VOPRF ciphersuite at any one time. Should a server choose to change some aspect
-of the ciphersuite (e.g., the group instantiation or other cryptographic
-functionality)  we recommend that the server create a new identifying label
-(e.g. "server_1_${ciphersuite_id}") where ciphersuite_id corresponds to the
-identifier of the VOPRF ciphersuite. Then "server_1" revokes all keys for the
-previous ciphersuite and then only offers commitments for the current label.
-
-An alternative arrangement would be to add a new layer of members between server
-identifiers and key versions in the JSON struct, corresponding to
-ciphersuite_id. Then the client may choose commitments from the appropriate
-group identifying member.
-
-We strongly recommend that service providers only operate with one group
-instantiation at any one time. If a server uses two VOPRF ciphersuites at any
-one time then this may become an avenue for segregating the user-base. User
-segregation can lead to privacy concerns relating to the utility of the
-obliviousness of the VOPRF protocol (as raised in {{OPRF}}). We discuss this
-more in ...
-
-### ECDSA key material
-
-For clients must also know the verification (ecdsaVK) for each service provider
-that they support. This enables the client to verify that the commitment is
-properly formed before it uses it. We do not provide any specific
-recommendations on how the client has access to this key, beyond that the
-verification key should be accessible separately from the trusted registry.
-
-While the number of service providers associated with Privacy Pass is low, the
-client can simply hardcode the verification keys directly for each provider that
-they support. This may be cumbersome if a provider wants to rotate their signing
-key, but since these keys should be comparatively long-term (relative to the
-VOPRF key schedule), then this should not be too much of an issue.
+In the initialisation phase above, we require that the server contacts each
+viable client. In {{registry}} we discuss the possibility of uploading public
+key material to a trusted registry that client's access when communicating with
+the server.
 
 ## Issuance phase
 
@@ -567,209 +385,194 @@ client data will be rendered obsolete after such an event.
 
 ## Error types {#errors}
 
-# Browser integrations {#browser}
+# Key registration {{registry}}
 
-We discuss possible use-cases and potential APIs for using Privacy Pass in the
-browser setting. We discuss security considerations arising from the
-construction of this API in {{security}}.
+Rather than sending the result of the key initialisation procedure directly to
+each client, it is preferable to upload the object obj to a trusted,
+tamper-proof, history-preserving registry. By trusted, we mean from the
+perspective of clients that use the Privacy Pass protocol. Any new keys uploaded
+to the registry should be appended to the list. Any keys that have expired can
+optionally be labelled as so, but should never be removed. A trusted registry
+may hold key commitments for multiple Privacy Pass service providers (servers).
 
-## Per-origin trust {#per-origin}
+Clients can either choose to:
 
-We cover a use-case of the Privacy Pass protocol to allow origins to associate
-trust with browsers in which the client browsing activity should not be tracked.
-In particular, we discuss an API that allows the browser to store data issued in
-a Privacy Pass exchange in per-origin storage areas. This data can later be
-redeemed in third-party contexts where the user may be unknown, or have a low
-associated trust score.
+- poll the trusted registry and import new keys, rejecting any that throw
+  errors;
+- retrieve the commitments for the server at the time at which they are used,
+  throwing errors if no valid commitment is available.
 
-We provide a browser API that allows users browsing on a certain origin to
-perform Privacy Pass issuance interactions, where the origin acts as the server
-in the Privacy Pass protocol. We then describe how third-party origins can
-invoke redemptions from a client for this issuer, so that the third-party can
-learn whether the issuer trusts the client. This allows the third-party to
-inform their own decision-making about the client, without harming their
-privacy.
+To prevent unauthorized modification of the trusted registry, server's should be
+required to identify and authenticate themselves before they can append data to
+their configuration. Moreover, only parts of the registry that correspond to the
+servers configuration can be modifiable.
 
-The API that we detail is based on the API first detailed in {{TRUST}}.
+## Key rotation
 
-### Issuance
+Whenever a server seeks to rotate their key, they must append their key to the
+trusted registry. We recommend that the trusted registry is arranged as a JSON
+blob with a member for each JSON provider. Each provider appends new keys by
+creating a new sub-member corresponding to an incremented version label along
+with their new commitment object.
 
-#### Assumptions
-
-- There is a client C that is a browser context operated by O (for some origin
-  issuer.com). C implements the role of the client in Privacy Pass issuance.
-- O is a Privacy Pass issuer, and implements the server in the issuance phase.
-- C will the output of the issuance phase and store this in a per-origin
-  partition of the browser storage. Each individual output will be referred to
-  as a Trust Token.
-- O has uploaded their Privacy Pass key commitment to a trusted registry known
-  to the client.
-
-#### API
-
-When O wants to provide trust tokens to C, they use a Javascript API that
-invokes fetch:
-
-~~~
-fetchTrustTokens("/request-tokens").then(...)
-~~~
-
-This API function will perform the following operations:
-
-~~~
-    - Generate a set of random nonces denoted x1, ... , xQ as separate Buffer
-      objects.
-    - Runs VOPRF_Blind(xi) for i in 1...Q and parses the response as a pair of
-      Buffers denoted by (ri,Mi). Each Mi is a valid encoding of a group element
-      {{encoding}} as a Buffer object.
-    - Create a HTTP request with the following set:
-      - method: POST
-      - path: /request-tokens
-      - body: {"data":[ base64(M1), ... , base64(MQ) ]}
-    - Send the HTTP request.
-~~~
-
-The HTTP response for a successfully processed request should be of the form
+Concretely, we recommend that the trusted registry is a JSON file of the form
 below.
 
-~~~
-  status: 200
-  body: {
-    "result": {
-      "tokens":[ base64(Z1), ... , base64(ZQ) ],
-      "proof":[ base64(D1), ... base64(DQ) ],
-      "version":"1.0"
-    }
-  }
-~~~
-
-The key version "1.0" here should be set to the version string used by O for the
-latest key that it has issued. We use D1,...,DQ to refer to individual VOPRF
-proof objects {{OPRF}}. These are each made up of a pair of Buffer objects. Note
-that it is possible to use the batching technique described in {{OPRF}} to batch
-each of these into a single proof object at the expense of slightly more
-server-side computation. The modified batched response is given below.
-
-~~~
-  body: {
-    "result": {
-      "tokens":[ base64(Z1), ... , base64(ZQ) ],
-      "proof":base64(D),
-      "version":"1.0"
-    }
-  }
-~~~
-
-In the following, we will assume that proof objects are not batched for
-simplicity. If an error occurred the response should take the form:
-
-- status: 400
-- body: {"error":{"message": "error message","code": error_code}}
-
-where error_code is a numeric error code corresponding to the error that
-occurred. In the event of an error occurring, the promise rejects.
-
-In the success case, the client parses the JSON blob and decodes each
-entry, before performing the following steps:
-
-- Retrieves (G,Y) from the trusted commitment registry entry for O for key
-  version "1.0".
-- Runs Ni = VOPRF_Unblind(ri,G,Y,Mi,Zi,Di) for each i in 1...Q.
-- If Ni == "error", discard (xi,Ni).
-- Stores (xi,Ni) as Buffer objects in the O portion of the browser's per-origin
-  Privacy Pass storage.
-
-Notice that this final step does not run VOPRF_Finalize yet. The reason for
-this, is that we choose to run VOPRF_Finalize on auxiliary data that is taken
-generated at the time of redemption.
-
-### Redemption
-
-#### Assumptions
-
-- Client C has valid Trust Tokens for O (issuer.com)
-- Client C is browsing another origin OV (vendor.com).
-- Either OV is interested in learning whether O trusts C, or O embeds a script
-  on OV that checks the trust status of C. We assume that these two scenarios
-  are identical for now.
-
-#### API
-
-A new Javascript API is provided that allows OV to determine whether C has Trust
-Tokens issued by O.
-
-~~~ js
-fetchTrustAttestation("issuer.com", {"policy":["use-cache","refresh"]}).then(...)
-~~~
-
-If there are no tokens available for O, then the promise rejects. Otherwise the
-API functionality invokes the following operations in the browser.
-
-~~~
-    - Obtain (x,N) from the per-origin Privacy Pass storage for O
-    - Generate a random string denoted by nonce.
-    - Let rb be a Buffer containing the concatenation of the following bytes:
-      - bytes("issuer.com") .. bytes("vendor.com") .. bytes(nonce).
-    - Run y = VOPRF_Finalize(x,N,rb)
-    - Create a HTTP request with the following information:
-      - method: POST
-      - path: /redeem-tokens
-      - body: {"data":y,"bindings":[ "issuer.com", "vendor.com", nonce ]}
-    - Send the HTTP request to O.
-~~~
-
-The HTTP response for a successful request should take the following form.
-
-~~~
-    status: 200
-    body: {
-      "result": {
-        "timestamp":"2019-10-09-11:06:11",
-        "top-level":"vendor.com",
+~~~ json
+  {
+    "server_1": {
+      "ciphersuite": ...,
+      "1.0": {
+        "Y": ...,
+        "expiry": ...,
+        "sig": ...,
       },
-      "signature":sig,
+      "1.1": {
+        "Y": ...,
+        "expiry": ...,
+        "sig": ...,
+      },
     }
+    "server_2": {
+      "ciphersuite": ...,
+      "1.0": {
+        "Y": ...,
+        "expiry": ...,
+        "sig": ...,
+      },
+    },
+    ...
+  }
 ~~~
 
-The "timestamp" field should be set to the time that the server processed the
-redemption request, "top-level" is set to the top-level origin OV host value.
-The field "signature" is a signature, sig, evaluated over all of the fields in
-"result" that is verifiable using a well-known public key for O. If an error
-occurs, the format is the same as in the issuance phase, and the promise
-rejects.
+In this structure, "server_1" and "server_2" are separate service providers. The
+sub-member "ciphersuite" corresponds to the choice of VOPRF ciphersuite made by
+the server. The sub-members "1.0", "1.1" of "server_1" correspond to the
+versions of commitments available to the client. Increasing version numbers
+should correspond to newer keys. Each commitment should be a valid encoding of a
+point corresponding to the group in the VOPRF ciphersuite specified in
+"ciphersuite".
 
-On success, the above record is known as a signed redemption response (SRR).
-This SRR is then sent by C to OV, and OV validates the signature over the
-provided data to determine the result of the trust assertion. In general, these
-records are available to HTTP-only browser APIs. Such records can be forwarded
-as a new option in the fetch API:
+If "server_2" wants to upload a new commitment with version tag "1.1", it runs
+the key initialisation procedure from above and adds a new sub-member "1.1" with
+the value set to the value of the output obj. The "server_2" member should now
+take the form below.
 
+~~~ json
+  {
+    ...
+    "server_2": {
+      "ciphersuite": ...,
+      "1.0": {
+        "Y": ...,
+        "expiry": ...,
+        "sig": ...,
+      },
+      "1.1": {
+        "Y": ...,
+        "expiry": ...,
+        "sig": ...,
+      },
+    },
+    ...
+  }
 ~~~
-fetch(<resource-url>, {
-  ...
-  signedRedemptionRecord: "issuer.com",
-  ...
-});
+
+
+## Client retrieval
+
+We define a function retrieve(server_id, version_id) which retrieves the
+commitment with version label equal to version_id, for the provider denoted by
+the string server_id. For example, retrieve("server_1","1.1") will retrieve the
+member labelled with "1.1".
+
+We implicitly assume that this function performs the following verification
+checks:
+
+~~~ lua
+  if (!ECDSA.verify(ecdsaVK, obj.Y .. bytes(obj.expiry)) {
+    return "error"
+  } else if (!(new Date() < obj.expiry)) {
+    return "error"
+  }
 ~~~
 
-This includes the SRR object as the value of a header
-"Sec-Signed-Redemption-Record". This fetch option is only available in the
-top-level document.
+If "error" is not returned, then it instead returns the entire object. We also
+abuse notation and also use ciph = retrieve(server_id, "ciphersuite") to refer
+to retrieving the ciphersuite for the server configuration.
 
-#### Preventing token depletion
+## Key revocation
 
-To prevent OV from depleting the set of tokens that C has for O, the SRRs above
-are cached in first-party browser storage. If OV wants to learn about the trust
-attestation of C to O and C has a cached SRR for OV, then it sends this record;
-rather than performing an entirely new redemption with O.
+If a server must revoke a key, then it uses a separate member with label
+"revoke" corresponding to an array of revoke versions associated with key
+commitments. In the above example, if "server_2" needs to revoke the key with
+version "1.0", then it appends a new "revoke" member with the array [ "1.0" ].
+Any future revocations can simply be appended to this array. For an example, see
+below.
 
-If O has an embedded iframe in OV, and would like to refresh the SRR that C
-holds, it can use the "policy" settings of "fetchTrustAttestation" to refresh
-the SRR that the client holds.
+~~~ json
+  {
+    ...
+    "server_2": {
+      "ciphersuite": ...,
+      "1.0": {
+        "Y": ...,
+        "expiry": ...,
+        "sig": ...,
+      },
+      "1.1": {
+        "Y": ...,
+        "expiry": ...,
+        "sig": ...,
+      },
+      "revoked": [ "1.0" ],
+    },
+    ...
+  }
+~~~
+
+Client's are required to check the "revoked" member for new additions when they
+poll the trusted registry for new key data.
+
+## VOPRF ciphersuites
+
+Following the recommendations in {{OPRF}}, we assume that a server uses only one
+VOPRF ciphersuite at any one time. Should a server choose to change some aspect
+of the ciphersuite (e.g., the group instantiation or other cryptographic
+functionality)  we recommend that the server create a new identifying label
+(e.g. "server_1_${ciphersuite_id}") where ciphersuite_id corresponds to the
+identifier of the VOPRF ciphersuite. Then "server_1" revokes all keys for the
+previous ciphersuite and then only offers commitments for the current label.
+
+An alternative arrangement would be to add a new layer of members between server
+identifiers and key versions in the JSON struct, corresponding to
+ciphersuite_id. Then the client may choose commitments from the appropriate
+group identifying member.
+
+We strongly recommend that service providers only operate with one group
+instantiation at any one time. If a server uses two VOPRF ciphersuites at any
+one time then this may become an avenue for segregating the user-base. User
+segregation can lead to privacy concerns relating to the utility of the
+obliviousness of the VOPRF protocol (as raised in {{OPRF}}). We discuss this
+more in ...
+
+## ECDSA key material
+
+For clients must also know the verification (ecdsaVK) for each service provider
+that they support. This enables the client to verify that the commitment is
+properly formed before it uses it. We do not provide any specific
+recommendations on how the client has access to this key, beyond that the
+verification key should be accessible separately from the trusted registry.
+
+While the number of service providers associated with Privacy Pass is low, the
+client can simply hardcode the verification keys directly for each provider that
+they support. This may be cumbersome if a provider wants to rotate their signing
+key, but since these keys should be comparatively long-term (relative to the
+VOPRF key schedule), then this should not be too much of an issue.
 
 # Extensions {#exts}
 
-TODO: Discuss some of the extensions highlighted in {{TRUST}}.
+TODO: Discuss some of the possible extensions of Privacy Pass.
 
 # Privacy considerations {#privacy}
 
