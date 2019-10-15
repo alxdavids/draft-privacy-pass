@@ -139,6 +139,8 @@ the size of the array is Q, and the size of Q is implicit from context.
 ## Layout
 
 - {{overview}}: A generic overview of the Privacy Pass protocol based on VOPRFs.
+- {{registry}}: Describes the format of trusted registries that are used for
+  holding public key commitments for each of the Privacy Pass issuers.
 - {{exts}}: Extensions to the Privacy Pass protocol that allow for more specific
   functionality.
 - {{privacy}}: Privacy considerations and recommendations arising from the
@@ -175,8 +177,8 @@ Throughout this document we adhere to the recommendations laid out in {{OPRF}}
 in integrating the VOPRF protocol into our wider workflow. Where necessary, we
 lay out exactly which VOPRF API functionality we use. We stress that the
 generalized protocol only includes steps and messages that contain cryptographic
-data. In {{browser}}, we discuss how to implement the protocol in the browser
-setting, along with appropriate message encodings and formats.
+data. In {{encoding}}, we discuss how valid encodings for the data that is sent
+during the protocol.
 
 ## Key initialisation phase
 
@@ -631,7 +633,7 @@ information:
 ~~~ json
 "result": {
   "timestamp":"2019-10-09-11:06:11",
-  "issuer": "S",
+  "verifier": "V",
 },
 "signature":sig,
 ~~~
@@ -641,6 +643,10 @@ The `signature` field carries a signature evaluated over the contents of
 corresponding public key is well-known to C and V. Then C can prove that their
 trust attestation from S to V by sending the SRR to V. The SRR can be verified
 by V by verifying the signature using the well-known public key for S.
+
+Such records can be cached to display again in the future. The issuer can also
+add an expiry date to the record to determine when the client must refresh the
+record.
 
 ## Bounded-Issuers {#bi-config}
 
@@ -681,7 +687,8 @@ interacts with.
 
 We discuss a number of privacy considerations made in {{OPRF}} that are
 relevant to the Privacy Pass protocol use-case, along with additional
-considerations arising from the browser integration.
+considerations arising from the specific ways of using the Privacy Pass protocol
+in {{configurations}}.
 
 ## User segregation
 
@@ -724,9 +731,10 @@ TODO: Can client's flag bad server practices?
 ### Large numbers of issuers {#issuers}
 
 Similarly to the key rotation issue raised above, if there are a large number of
-issuers, similar user segregation can occur. In the proposed browser
-integration, a vendor OV can choose to invoke trust attestations for more than
-one issuer. Each SRR that a client holds essentially corresponds to a bit of
+issuers, similar user segregation can occur. In the BISV, BIFV, BIAV
+configurations of using the Privacy Pass protocol ({{configurations}}), a
+verifier OV can trigger redemptions for any of the available issuers. Each
+redemption token that a client holds essentially corresponds to a bit of
 information about the client that OV can learn. Therefore, there is an
 exponential loss in privacy relative to the number of issuers that there are.
 
@@ -760,23 +768,12 @@ those registries.
 #### Maximum number of issuers inferred by client
 
 A second recommendation is that clients only store redemption tokens for a fixed
-number of issuers at any one time. This would prevent a malicious vendor from
+number of issuers at any one time. This would prevent a malicious verifier from
 being able to invoke redemptions for many issuers since the client would only be
 holding redemption tokens for a small set of issuers. When a client is issued
 tokens from a new issuer and already has tokens from the maximum number of
 issuers, it simply deletes the oldest set of redemption tokens in storage and
 then stores the newly acquired tokens.
-
-#### Enforcing limits on per-origin issuances and redemptions
-
-Finally it may be possible for browsers to enforce a strict limit on the number
-of redemption requests that can be made by a vendor. Such limits may also be
-worthwhile enforcing for the number issuances that can be invoked per origin.
-
-The number of redemptions and issuances that have occurred can be persisted in
-browser storage either related to the origin, or via temporal information. This
-would prevent certain origins from being able to invoke numerous instances of
-either protocol phase.
 
 ## Tracking and identity leakage
 
@@ -785,25 +782,12 @@ redeeming them, there may be problems if we allow too many redemptions on a
 single page. For instance, the first-party cookie for user U on domain A can be
 encoded in the trust token information channel and decoded on domain B, allowing
 domain B to learn the user's domain A cookie until either first-party cookie is
-cleared.
+cleared. Mitigations for this issue are similar to those proposed in {{issuers}}
+for tackling the problem of having large number of issuers.
 
-Mitigations for this issue are similar to those proposed in {{issuers}} for
-tackling the problem of having large number of issuers.
-
-Moreover, cached SRRs and their associated browser public keys have a similar
-tracking potential to first party cookies. Therefore these should be clearable
-by browser’s existing Clear Site Data functionality.The SRR and its public key
-are untamperable first-party tracking vectors. They allow sites to share their
-first-party user identity with third parties on the page in a verifiable way. To
-mitigate this potentially undesirable situation, user agents can request
-multiple SRRs in a single token redemption, each bound to different key pairs,
-and use different SRRs and key pairs when performing requests based on the
-third-party or over time.
-
-In order to prevent the issuer from binding together multiple simultaneous
-redemptions, the UA can blind the key pairs before sending them to the issuer.
-Additionally, the client may need to produce signed timestamps to prevent the
-issuer from using the timestamp as another matching method.
+In SIAV, cached SRRs and their associated issuer public keys have a similar
+tracking potential to first party cookies in the browser setting. Therefore
+these should be clearable by the client using standard deletion methods.
 
 # Security considerations {#security}
 
@@ -846,17 +830,23 @@ much longer, if necessary.
 
 ## Token exhaustion
 
-When a user holds tokens for an issuer, it is possible to invoke that user to
-redeem tokens for that issuer. This can lead to an attack where a malicious
-issuer/vendor can force a user to spend all of their tokens for a given issuer.
-To prevent this from happening, methods should be put into place to prevent many
-tokens from being redeemed at once.
+When a client holds tokens for an issuer, it is possible for any verifier to
+invoke that client to redeem tokens for that issuer. This can lead to an attack
+where a malicious verifier can force a client to spend all of their tokens for a
+given issuer. To prevent this from happening, methods should be put into place
+to prevent many tokens from being redeemed at once.
 
 For example, it may be possible to cache a redemption for the entity that is
-invoking a token redemption. If the entity requests more tokens then the client
-simply returns the cached token that it returned previously. This could also be
-handled by simply not redeeming any tokens for the entity if a redemption had
-already occurred in a given time window.
+invoking a token redemption. In SISV/SIFV, if the verifier requests more tokens
+then the client simply returns the cached token that it returned previously.
+This could also be handled by simply not redeeming any tokens for the entity if
+a redemption had already occurred in a given time window.
+
+In SIAV, the client instead caches the SRR that it received in the asynchronous
+redemption exchange with the issuer. If the same verifier attempts another
+trust attestation request, then the client simply returns the cached SRR. The
+SRRs can be revoked by the issuer, if need be, by providing an expiry date or by
+signalling that records from a particular window need to be refreshed.
 
 # Valid data encodings {#encoding}
 
