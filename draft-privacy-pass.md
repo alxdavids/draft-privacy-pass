@@ -389,7 +389,7 @@ client data will be rendered obsolete after such an event.
 
 TODO: specify error types
 
-# Key registration {{registry}}
+# Key registration {#registry}
 
 Rather than sending the result of the key initialisation procedure directly to
 each client, it is preferable to upload the object obj to a trusted,
@@ -510,7 +510,7 @@ to retrieving the ciphersuite for the server configuration.
 If a server must revoke a key, then it uses a separate member with label
 "revoke" corresponding to an array of revoke versions associated with key
 commitments. In the above example, if "server_2" needs to revoke the key with
-version "1.0", then it appends a new "revoke" member with the array [ "1.0" ].
+version "1.0", then it appends a new "revoke" member with the array `[ "1.0" ]`.
 Any future revocations can simply be appended to this array. For an example, see
 below.
 
