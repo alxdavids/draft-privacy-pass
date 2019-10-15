@@ -385,6 +385,8 @@ client data will be rendered obsolete after such an event.
 
 ## Error types {#errors}
 
+TODO: specify error types
+
 # Key registration {{registry}}
 
 Rather than sending the result of the key initialisation procedure directly to
