@@ -570,14 +570,108 @@ they support. This may be cumbersome if a provider wants to rotate their signing
 key, but since these keys should be comparatively long-term (relative to the
 VOPRF key schedule), then this should not be too much of an issue.
 
+# Configurations {#configurations}
+
+We provide an overview of some of the possible ways of configuring the Privacy
+Pass protocol situation, such that it can be used as a lightweight trust
+attestation mechanism for clients.
+
+## Single-Issuer Single-Verifier {#sisv}
+
+The simplest way of considering the Privacy Pass protocol is in a setting where
+the same server plays the role of issuer and verifier, we call this
+"Single-Issuer Single-Verifier" (SISV). In SISV, we consider a server S that
+publishes commitments for their secret key k, that a client C has access to.
+
+When S wants to issue tokens to C, they invoke the issuance protocol where C
+generates their own inputs and S uses their secret key k. In this setting, C can
+only perform token redemption with S. When a token redemption is required, C and
+S invoke the redemption phase of the protocol, where C uses an issued token from
+a previous exchange, and S uses k as their input again.
+
+In SISV, C proves that S has attested to the honesty of C at some point in the
+past (without revealing exactly when). S can use this information to inform it's
+own decision-making about C without having to recompute the trust attestation
+task again.
+
+## Single-Issuer Forwarding-Verifier {#sifv}
+
+In this setting, each client C obtains issued tokens from a server S via the
+issuance phase of the protocol. The difference is that clients can prove that S
+has attested to their honesty in the past with any verifier V. We still only
+consider S to hold their own secret key.
+
+When C interacts with V, V can ask C to provide proof that the separate issuer S
+has attested to their trust. The first stage of the redemption phase of the
+protocol is invoked between C and V, which sees C send the unused token
+(x,y,aux) to V. This message is then used in a redemption exchange between V and
+S, where V plays the role of the client. Then S sends the result of the
+redemption exchange to V, and V uses this result to determine whether C has the
+correct trust attestation.
+
+This configuration is known as "Single-Issuer Forwarding-Verifier" or SIFV to
+refer to the verifier V who uses the output of the redemption phase for their
+own decision-making.
+
+## Single-Issue Asynchronous-Verifier {#siav}
+
+This setting is inspired by recently proposed APIs such as {{TRUST}}. It is
+similar to the SIFV configuration, except that the verifiers V no longer
+interact with the issuer S. Only C interacts with S, and this is done
+asynchronously to the trust attestation request from V. Hence
+"Asynchronous-Verifier" (SIAV).
+
+When V invokes a redemption for C, C then invokes a redemption exchange with S
+in a separate session. If verification is carried out successfully by S, S
+instead returns a Signed Redemption Record (SRR) that contains the following
+information:
+
+~~~ json
+"result": {
+  "timestamp":"2019-10-09-11:06:11",
+  "issuer": "S",
+},
+"signature":sig,
+~~~
+
+The `signature` field carries a signature evaluated over the contents of
+`result` using a long-term signing key for the issuer S, of which the
+corresponding public key is well-known to C and V. Then C can prove that their
+trust attestation from S to V by sending the SRR to V. The SRR can be verified
+by V by verifying the signature using the well-known public key for S.
+
+## Bounded-Issuers {#bi-config}
+
+Each of the configurations above can be generalized to settings where a bounded
+number of issuers are allowed, and verifiers can invoke trust attestations for
+any of the available issuers. Subsequently, this leads to three new
+configurations known as BISV, BIFV, BIAV.
+
+As we will discuss later in {{issuers}}, configuring a large number of issuers
+can lead to privacy concerns for the clients in the ecosystem. Therefore, we are
+careful to ensure that the number of issuers is kept strictly bounded by a fixed
+small number M. The actual issuers can be replaced with different issuers as
+long as the total never exceeds M. Moreover, issuer replacements also have an
+effect on client privacy that is similar to when a key rotation occurs, so
+replacement should only be permitted at similar intervals.
+
+See {{issuers}} for more details about safe choices of M.
+
+### Fixing the bound
+
+Configuring any number of issuers greater than 1 effectively reduces privacy by
+an extra bit. As a result, we see an exponential decrease in privacy in the
+number of issuers that are currently active. Therefore the value of M should be
+kept very low.
+
 # Extensions {#exts}
 
 TODO: Discuss some of the possible extensions of Privacy Pass.
 
 # Privacy considerations {#privacy}
 
-We intentionally encode no special information into Trust Tokens to prevent a
-vendor from learning anything about the client. We also have cryptographic
+We intentionally encode no special information into redemption tokens to prevent
+a vendor from learning anything about the client. We also have cryptographic
 guarantees via the VOPRF construction that a vendor can learn nothing about a
 client beyond which issuers trust it. Still there are ways that malicious
 servers can try and learn identifying information about clients that it
@@ -619,9 +713,9 @@ Trusted registries for holding Privacy Pass key commitments can be useful in
 policing the key schedule that a server uses. Each key must have a corresponding
 commitment in this registry so that clients can verify issuance responses from
 servers. Clients may choose to inspect the history of the registry before first
-accepting Trust Tokens from the server. If a server has updated the registry
-with many unexpired keys, or in very quick intervals a client can choose to
-reject the tokens.
+accepting redemption tokens from the server. If a server has updated the
+registry with many unexpired keys, or in very quick intervals a client can
+choose to reject the tokens.
 
 TODO: Can client's flag bad server practices?
 
@@ -641,23 +735,35 @@ amongst all other internet users. Assuming a uniform distribution is clearly the
 worst-case scenario, and unlikely to be accurate, but it provides a stark
 warning against allowing too many issuers at any one time.
 
+As we noted in {{bi-config}}, a strict bound should be applied to the active
+number of issuers that are allowed at one time. We propose that allowing no more
+than 6 issuers at any one time is highly preferable (leading to a maximum of 64
+possible user segregations). Issuer replacements should only occur with the same
+frequency as key rotations as they can lead to similar losses in privacy if
+users still hold redemption tokens for previously active issuers.
+
+In addition, we recommend that trusted registries indicate at all times which
+issuers are deemed to be active. If a client is asked to invoke any Privacy Pass
+exchange for an issuer that is not declared active, then the client should
+refuse to participate in the protocol.
+
 #### Selected trusted registries
 
 One recommendation is that only a fixed number (TODO: how many?) of issuers are
-sanctioned to provide Trust Tokens at any one time. This could be enforced by
-the trusted registry that is being used. Client's can then choose which
-registries to trust and only accept Trust Tokens from issuers accepted into
+sanctioned to provide redemption tokens at any one time. This could be enforced
+by the trusted registry that is being used. Client's can then choose which
+registries to trust and only accept redemption tokens from issuers accepted into
 those registries.
 
 #### Maximum number of issuers inferred by client
 
-A second recommendation is that clients only store Trust Tokens for a fixed
+A second recommendation is that clients only store redemption tokens for a fixed
 number of issuers at any one time. This would prevent a malicious vendor from
 being able to invoke redemptions for many issuers since the client would only be
-holding Trust Tokens for a small set of issuers. When a client is issued tokens
-from a new issuer and already has tokens from the maximum number of issuers, it
-simply deletes the oldest set of Trust Tokens in storage and then stores the
-newly acquired tokens.
+holding redemption tokens for a small set of issuers. When a client is issued
+tokens from a new issuer and already has tokens from the maximum number of
+issuers, it simply deletes the oldest set of redemption tokens in storage and
+then stores the newly acquired tokens.
 
 #### Enforcing limits on per-origin issuances and redemptions
 
@@ -672,11 +778,12 @@ either protocol phase.
 
 ## Tracking and identity leakage
 
-While Trust Tokens themselves encode no information about the client redeeming
-them, there may be problems if we allow too many redemptions on a single page.
-For instance, the first-party cookie for user U on domain A can be encoded in
-the trust token information channel and decoded on domain B, allowing domain B
-to learn the user's domain A cookie until either first-party cookie is cleared.
+While redemption tokens themselves encode no information about the client
+redeeming them, there may be problems if we allow too many redemptions on a
+single page. For instance, the first-party cookie for user U on domain A can be
+encoded in the trust token information channel and decoded on domain B, allowing
+domain B to learn the user's domain A cookie until either first-party cookie is
+cleared.
 
 Mitigations for this issue are similar to those proposed in {{issuers}} for
 tackling the problem of having large number of issuers.
@@ -737,21 +844,17 @@ much longer, if necessary.
 
 ## Token exhaustion
 
-To prevent a vendor from exhausting all the tokens that a client for a given (or
-multiple) issuers, we recommend the following mitigations.
+When a user holds tokens for an issuer, it is possible to invoke that user to
+redeem tokens for that issuer. This can lead to an attack where a malicious
+issuer/vendor can force a user to spend all of their tokens for a given issuer.
+To prevent this from happening, methods should be put into place to prevent many
+tokens from being redeemed at once.
 
-- Issuers issue many tokens at once, so users have a large supply of tokens.
-- Browsers will only ever redeem one token per top-level page view, so it will
-  take many page views to deplete the full supply.
-- The browser will cache SRRs per-origin and only refresh them when an issuer
-  iframe opts-in, so malicious origins won't deplete many tokens. The
-  "freshness" of the SRR becomes an additional trust signal.
-- Browsers may choose to limit redemptions on a time-based schedule, and either
-  return cached SRRs if available, or require consumers to cache the SRR.
-- Issuers will be able to see the Referer, subject to the page's referrer
-  policy, for any token redemption, so they'll be able to detect if any one site
-  is redeeming suspiciously many tokens.
-
+For example, it may be possible to cache a redemption for the entity that is
+invoking a token redemption. If the entity requests more tokens then the client
+simply returns the cached token that it returned previously. This could also be
+handled by simply not redeeming any tokens for the entity if a redemption had
+already occurred in a given time window.
 
 # Valid data encodings {#encoding}
 
