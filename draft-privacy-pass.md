@@ -290,7 +290,7 @@ recommended in {{OPRF}}. We give a diagrammatic overview of the protocol below.
     var ciph = retrieve(S.id, "ciphersuite")
     var (r,M) = VOPRF_Blind(x)
 
-                          bytes(M)
+                               M
                       ------------------>
 
                                             (Z,D) = VOPRF_Eval(ppKey.private,
@@ -384,6 +384,17 @@ future protocols. Since this store needs to only be optimized for storage and
 querying, a structure such as a Bloom filter suffices. Importantly, the server
 must only eject this storage after a key rotation occurs since all previous
 client data will be rendered obsolete after such an event.
+
+### Finalization during redemption
+
+The last step if the issuance phase for the client is to run VOPRF_Finalize and
+store the output. In some applications, it may be necessary to link the output
+of VOPRF_Finalize to the actual redemption that is occurring. This can be done
+by tailoring the auxiliary data `aux` to something specific.
+
+In order to do this, it is necessary to store only (ciph, x, N) in the issuance
+phase of the protocol. Then during the redemption phase, generate auxiliary data
+`aux` and compute VOPRF_Finalize(x,N,aux) after retrieving the triplet above.
 
 ## Error types {#errors}
 
@@ -850,4 +861,17 @@ signaling that records from a particular window need to be refreshed.
 
 # Valid data encodings {#encoding}
 
-TODO: Discuss valid data encodings of all objects in transport.
+## Elliptic curve points
+
+When encoding elliptic curve points into existing data structures or into
+protocol messages, we assume that the curve points are first encoded into bytes
+using the methods given in {{SEC2}}. We allow both uncompressed and compressed
+encodings, as long as the client and server are aligned on the encodings that
+they used. Compressed encodings provide storage and communication benefits but
+are slightly more expensive to decode.
+
+## Protocol messages
+
+Protocol messages can either be encoded in raw byte format, as base64-encoded
+string objects, or as JSON objects where all strings are represented in
+base64-encoded format.
