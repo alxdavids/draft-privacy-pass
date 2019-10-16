@@ -846,7 +846,7 @@ In SIAV, the client instead caches the SRR that it received in the asynchronous
 redemption exchange with the issuer. If the same verifier attempts another
 trust attestation request, then the client simply returns the cached SRR. The
 SRRs can be revoked by the issuer, if need be, by providing an expiry date or by
-signalling that records from a particular window need to be refreshed.
+signaling that records from a particular window need to be refreshed.
 
 # Valid data encodings {#encoding}
 
