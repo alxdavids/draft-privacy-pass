@@ -864,11 +864,10 @@ signaling that records from a particular window need to be refreshed.
 ## Elliptic curve points
 
 When encoding elliptic curve points into existing data structures or into
-protocol messages, we assume that the curve points are first encoded into bytes
-using the methods given in {{SEC2}}. We allow both uncompressed and compressed
-encodings, as long as the client and server are aligned on the encodings that
-they used. Compressed encodings provide storage and communication benefits but
-are slightly more expensive to decode.
+protocol messages, we assume that the curve points are first encoded into bytes.
+We allow both uncompressed and compressed encodings, as long as the client and
+server are aligned on the encodings that they used. Compressed encodings provide
+storage and communication benefits but are slightly more expensive to decode.
 
 ## Protocol messages
 
