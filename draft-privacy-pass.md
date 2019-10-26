@@ -87,8 +87,8 @@ the reputation of a client in latency-sensitive communication.
 
 The Privacy Pass protocol was initially introduced as a mechanism for
 authenticating clients that had previously demonstrated their `honesty`
-{{DGSTV18}}. In particular, the Cloudflare content delivery network (CDN)
-has implemented server-side support for the Privacy Pass protocol {{PPSRV}}. This
+{{DGSTV18}}. In particular, the Internet performance company Cloudflare has
+implemented server-side support for the Privacy Pass protocol {{PPSRV}}. This
 support allows clients to bypass security mechanisms, providing that they have
 successfully passed these mechanisms previously. There is also a client-side
 implementation in the form of a browser extension that interacts with the
@@ -126,12 +126,12 @@ The following terms are used throughout this document.
 ## Preliminaries
 
 Throughout this draft, let D be some object corresponding to an opaque data type
-(such as a group element). We write bytes(D) to denote the encoding of this
-data type as raw bytes. We assume that such objects can also be interpreted as
-Buffer objects, with each internal slot in the buffer set to the value of the
-one of the bytes. For two objects x and y, we denote the concatenation of the
-bytes of these objects by (bytes(x) .. bytes(y)). We assume that all bytes are
-first base64-encoded before they are sent as part of a protocol message.
+(such as a group element). We write bytes(D) to denote the encoding of this data
+type as raw bytes. We assume that such objects can also be interpreted as Buffer
+objects, with each internal slot in the buffer set to the value of the one of
+the bytes. For two objects x and y, we denote the concatenation of the bytes of
+these objects by (bytes(x) .. bytes(y)). We assume that all bytes are first
+base64-encoded before they are sent as part of a protocol message.
 
 We use the notation `[ Ti ]` to indicate an array of objects T1, ... , TQ where
 the size of the array is Q, and the size of Q is implicit from context.
@@ -143,8 +143,8 @@ the size of the array is Q, and the size of Q is implicit from context.
   holding public key commitments for each of the Privacy Pass issuers.
 - {{exts}}: Extensions to the Privacy Pass protocol that allow for more specific
   functionality.
-- {{privacy}}: Privacy considerations and recommendations arising from the
-  usage of the Privacy Pass protocol.
+- {{privacy}}: Privacy considerations and recommendations arising from the usage
+  of the Privacy Pass protocol.
 - {{security}}: Additional security considerations to prevent abuse of the
   protocol from a malicious client.
 - {{encoding}}: Valid data encodings for all objects that are in transit during
@@ -194,8 +194,8 @@ level implied by the choice of l. The server has a list of supported group
 params (GROUP_PARAMS) and chooses an identifier, id, associated with the
 preferred group configuration, and also outputs the implied length of l. It
 creates a Privacy Pass key object denoted by ppKey that has fields "private",
-"public" and "group". It sets ppKey.private = bytes(k), ppKey.public =
-bytes(Y) and ppKey.group = id.
+"public" and "group". It sets ppKey.private = bytes(k), ppKey.public = bytes(Y)
+and ppKey.group = id.
 
 The server creates a JSON object of the form below.
 
@@ -208,9 +208,9 @@ The server creates a JSON object of the form below.
 ~~~
 
 The field "expiry" corresponds to an expiry date for the newly sampled key. We
-recommend that each key has a lifetime of between 1 month and 1 year. The field
-"sig" holds an ASN1-encoded ECDSA signature evaluated over the contents of "Y"
-and "expiry". The ECDSA parameters should be equivalent to the group
+recommend that each key has a lifetime of between 1 month and 6 months. The
+field "sig" holds an ASN1-encoded ECDSA signature evaluated over the contents of
+"Y" and "expiry". The ECDSA parameters should be equivalent to the group
 instantiation used for the OPRF, and the signing key (ecdsaSK) should be
 long-term with a corresponding publicly available verification key (ecdsaVK). We
 summarize the creation of this object using the algorithm PP_key_init(), which
@@ -681,7 +681,7 @@ See {{issuers}} for more details about safe choices of M.
 Configuring any number of issuers greater than 1 effectively reduces privacy by
 an extra bit. As a result, we see an exponential decrease in privacy in the
 number of issuers that are currently active. Therefore the value of M should be
-kept very low.
+kept very low (we recommend no higher than 4).
 
 # Extensions {#exts}
 
@@ -696,12 +696,12 @@ client beyond which issuers trust it. Still there are ways that malicious
 servers can try and learn identifying information about clients that it
 interacts with.
 
-We discuss a number of privacy considerations made in {{OPRF}} that are
-relevant to the Privacy Pass protocol use-case, along with additional
-considerations arising from the specific ways of using the Privacy Pass protocol
-in {{configurations}}.
+We discuss a number of privacy considerations made in {{OPRF}} that are relevant
+to the Privacy Pass protocol use-case, along with additional considerations
+arising from the specific ways of using the Privacy Pass protocol in
+{{configurations}}.
 
-## User segregation
+## User segregation {#segregation}
 
 An inherent features of using cryptographic primitives like VOPRFs is that any
 client can only remain private relative to the entire space of users using the
@@ -854,10 +854,80 @@ This could also be handled by simply not redeeming any tokens for the entity if
 a redemption had already occurred in a given time window.
 
 In SIAV, the client instead caches the SRR that it received in the asynchronous
-redemption exchange with the issuer. If the same verifier attempts another
-trust attestation request, then the client simply returns the cached SRR. The
-SRRs can be revoked by the issuer, if need be, by providing an expiry date or by
+redemption exchange with the issuer. If the same verifier attempts another trust
+attestation request, then the client simply returns the cached SRR. The SRRs can
+be revoked by the issuer, if need be, by providing an expiry date or by
 signaling that records from a particular window need to be refreshed.
+
+# Summary of privacy and security parameters
+
+We provide a summary of the parameters that we use in the Privacy Pass protocol.
+These parameters are informed by both privacy and security considerations that
+are highlighted in {{privacy}} and {{security}}, respectively. These parameters
+are intended as a single reference point for implementers when implementing the
+protocol.
+
+Firstly, let U be the total number of users, I be the total number of issuers.
+Assuming that each user accept tokens from a uniform sampling of all the
+possible issuers, as a worst-case analysis, this segregates users into a total
+of 2^I buckets. As such, we see an exponential reduction in the size of the
+anonymity set for any given user. This allows us to specify the privacy
+constraints of the protocol below, relative to the setting of A.
+
+| parameter | value |
+|---|---|
+| Minimum anonymity set size (A) | 5000 |
+| Recommended key lifetime (L) | 1 - 6 months |
+| Recommended key rotation frequency (F) | L/2 |
+| Maximum allowed issuers (I) | log_2(U/A)-1 |
+| Maximum active issuance keys | 1 |
+| Maximum active redemption keys | 2 |
+| Minimum security parameter | 196 bits |
+
+## Justification
+
+We make the following assumptions in these parameter choices.
+
+- Inferring the identity of a user in a 5000-strong anonymity set is difficult
+- After 2 weeks, all clients in a system will have rotated to the new key
+
+The maximum choice of I is based on the equation 1/2 * U/2^I = A. This is
+because I issuers lead to 2^I segregations of the total user-base U. By reducing
+I we limit the possibility of performing the attacks mentioned in
+{{segregation}}.
+
+We must also account for each user holding issued data for more then one
+possible active keys. While this may also be a vector for monitoring the access
+patterns of clients, it is likely to unavoidable that clients hold valid
+issuance data for the previous key epoch. This also means that the server can
+continue to verify redemption data for a previously used key. This makes the
+rotation period much smoother for clients.
+
+For privacy reasons, it is recommended that key epochs are chosen that limit
+clients to holding issuance data for a maximum of two keys. By choosing F = L/2
+then the minimum value of F is 1/2 a month, since the minimum recommended value
+of L is 1 month. Therefore, by the initial assumption, then all users should
+only have access to only two keys at any given time. This reduces the anonymity
+set by another half at most.
+
+Finally, the minimum security parameter size is related to the cryptographic
+security offered by the group instantiation that is chosen. For example, if we
+use an elliptic curve over a 256-bit prime field, then the actual group
+instantiation offers 128 bits of security (or a security parameter of size 128
+bits). However, as noted in {{OPRF}}, OPRF protocols reduce the effective
+security of the group by log_2(M) where M is the number of queries. As such, we
+choose the minimum size of the security parameter to be 196 bits, so that it is
+difficult for a malicious client to exploit this.
+
+## Example parameterization
+
+Using the specification above, we can give some example parameterizations. For
+example, the current Privacy Pass browser extension {{PPEXT}} has over 150,000
+active users (from Chrome and Firefox). Then log_2(U/A) is approximately 5 and
+so the maximum value of I should be 4.
+
+If the value of U is much bigger (e.g. 5 million) then this would permit I =
+log_2(5000000/5000)-1 = 8 issuers.
 
 # Valid data encodings {#encoding}
 
