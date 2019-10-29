@@ -16,6 +16,7 @@ author:
     ins: A. Davidson
     name: Alex Davidson
     org: Cloudflare Portugal
+    street: Largo Rafael Bordalo Pinheiro 29
     city: Lisbon
     country: Portugal
     email: alex.davidson92@gmail.com
@@ -23,8 +24,9 @@ author:
     ins: N. Sullivan
     name: Nick Sullivan
     org: Cloudflare
-    city: San Francisco, CA
-    country: USA
+    street: 101 Townsend Street
+    city: San Francisco
+    country: United States of America
     email: nick@cloudflare.com
 
 normative:
