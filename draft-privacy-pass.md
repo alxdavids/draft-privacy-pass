@@ -15,11 +15,17 @@ author:
  -
     ins: A. Davidson
     name: Alex Davidson
-    org: Cloudflare, UK
-    street: County Hall, Belvedere Road
-    city: London
-    country: United Kingdom
-    email: adavidson@cloudflare.com
+    org: Cloudflare Portugal
+    city: Lisbon
+    country: Portugal
+    email: alex.davidson92@gmail.com
+ -
+    ins: N. Sullivan
+    name: Nick Sullivan
+    org: Cloudflare
+    city: San Francisco, CA
+    country: USA
+    email: nick@cloudflare.com
 
 normative:
   RFC2119:
@@ -141,8 +147,6 @@ the size of the array is Q, and the size of Q is implicit from context.
 - {{overview}}: A generic overview of the Privacy Pass protocol based on VOPRFs.
 - {{registry}}: Describes the format of trusted registries that are used for
   holding public key commitments for each of the Privacy Pass issuers.
-- {{exts}}: Extensions to the Privacy Pass protocol that allow for more specific
-  functionality.
 - {{privacy}}: Privacy considerations and recommendations arising from the usage
   of the Privacy Pass protocol.
 - {{security}}: Additional security considerations to prevent abuse of the
@@ -682,10 +686,6 @@ Configuring any number of issuers greater than 1 effectively reduces privacy by
 an extra bit. As a result, we see an exponential decrease in privacy in the
 number of issuers that are currently active. Therefore the value of M should be
 kept very low (we recommend no higher than 4).
-
-# Extensions {#exts}
-
-TODO: Discuss some of the possible extensions of Privacy Pass.
 
 # Privacy considerations {#privacy}
 
