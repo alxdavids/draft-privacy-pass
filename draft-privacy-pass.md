@@ -78,25 +78,38 @@ normative:
     author:
       -
         ins: Federal Information Processing Standards Publication
+  keytrans:
+    title: "Security Through Transparency"
+    target: https://security.googleblog.com/2017/01/security-through-transparency.html
+    authors:
+      -
+        ins: Ryan Hurst
+        org: Google
+      -
+        ins: Gary Belvin
+        org: Google
 
 --- abstract
 
 This document specifies the Privacy Pass protocol for anonymously
-authenticating to services on the internet.
+authorizing clients with services on the Internet.
 
 --- middle
 
 # Introduction
 
-In some situations, it may only be necessary to check that a client has
-previously authenticated to a service; without learning any other information.
-Such lightweight authentication mechanisms can be useful in quickly assessing
+In some situations, it may only be necessary to check that a client has been
+previously authorized by a service; without learning any other information.
+Such lightweight authorization mechanisms can be useful in quickly assessing
 the reputation of a client in latency-sensitive communication.
 
 The Privacy Pass protocol was initially introduced as a mechanism for
-authenticating clients that had previously demonstrated their `honesty`
-{{DGSTV18}}. In particular, the Internet performance company Cloudflare has
-implemented server-side support for the Privacy Pass protocol {{PPSRV}}. This
+authorizing clients that had already been authorized in the past, without
+compromizing their privacy {{DGSTV18}}. This document seeks to standardize the
+usage and parametrization of the protocol.
+
+The Internet performance company Cloudflare has already implemented server-side
+support for an initial version of the Privacy Pass protocol {{PPSRV}}. This
 support allows clients to bypass security mechanisms, providing that they have
 successfully passed these mechanisms previously. There is also a client-side
 implementation in the form of a browser extension that interacts with the
@@ -104,22 +117,21 @@ Cloudflare network {{PPEXT}}.
 
 The main security requirement of the Privacy Pass protocol is to ensure that
 previously authenticated clients do not reveal their identity on
-reauthentication. The protocol uses a cryptographic primitive known as a
+reauthorization. The protocol uses a cryptographic primitive known as a
 verifiable oblivious pseudorandom function (VOPRF) for implementing the
-authentication mechanism. In particular, the VOPRF is constructed in prime-order
-groups. In particular, this allows it to be implemented using elliptic curves
-{{OPRF}}. The protocol is split into three stages. The first two stages,
-initialisation and evaluation, are essentially equivalent to the VOPRF setup and
-evaluation phases from {{OPRF}}. The final stage, redemption, essentially
-amounts to revealing the client's secret inputs in the VOPRF protocol. The
-security (pseudorandomness) of the VOPRF protocol means that the client retains
-their privacy even after revealing this data.
+authorization mechanism. The VOPRF is implemented using elliptic curves and is
+currently in a separate standardization process {{OPRF}}. The protocol is split
+into three stages. The first two stages, initialisation and evaluation, are
+essentially equivalent to the VOPRF setup and evaluation phases from {{OPRF}}.
+The final stage, redemption, essentially amounts to revealing the client's
+secret inputs in the VOPRF protocol. The security (pseudorandomness) of the
+VOPRF protocol means that the client retains their privacy even after revealing
+this data.
 
 In this document, we will give a formal specification of the Privacy Pass
-protocol in the internet setting. In particular, we will specify how
-communication is achieved over HTTP, comparisons with different functionality
-and efficiency configurations, and how the OPRF protocol should be integrated
-into the wider Privacy Pass protocol workflow.
+protocol to be used in settings that require high performance. We will specify
+the necessary cryptographic operations required by the underlying VOPRF, along
+with recommendations on how to perform key rotation
 
 ## Terminology
 
@@ -127,34 +139,53 @@ The following terms are used throughout this document.
 
 - PRF: Pseudorandom function
 - VOPRF: Verifiable oblivious PRF {{OPRF}}
-- Server: A service that provides access to a certain resource (sometimes
+- Server: A service that provides access to a certain resource (typically
   denoted S)
-- Client: An entity that seeks to authenticate to a server (sometimes denoted C)
+- Client: An entity that seeks authorization from a server (typically denoted C)
+- Key: Server VOPRF key
+- Commitment: Corresponding public key to server's VOPRF key.
 
 ## Preliminaries
 
 Throughout this draft, let D be some object corresponding to an opaque data type
 (such as a group element). We write bytes(D) to denote the encoding of this data
-type as raw bytes. We assume that such objects can also be interpreted as Buffer
-objects, with each internal slot in the buffer set to the value of the one of
-the bytes. For two objects x and y, we denote the concatenation of the bytes of
-these objects by (bytes(x) .. bytes(y)). We assume that all bytes are first
-base64-encoded before they are sent as part of a protocol message.
+type as raw bytes (octet strings). We assume that such objects can also be
+interpreted as Buffer objects, with each internal slot in the buffer set to the
+value of the one of the bytes. For two objects x and y, we denote the
+concatenation of the bytes of these objects by (bytes(x) .. bytes(y)). We assume
+that all bytes are first base64-encoded before they are sent as part of a
+protocol message.
 
 We use the notation `[ Ti ]` to indicate an array of objects T1, ... , TQ where
 the size of the array is Q, and the size of Q is implicit from context.
+
+### Elliptic curve points
+
+When encoding elliptic curve points into existing data structures or into
+protocol messages, we assume that the curve points are first encoded into bytes.
+We allow both uncompressed and compressed encodings, as long as the client and
+server are aligned on the encodings that they used. Compressed encodings provide
+storage and communication benefits but are slightly more expensive to decode.
+
+### Protocol messages
+
+Protocol messages can either be encoded in raw byte format, as base64-encoded
+string objects, or as JSON objects where all strings are represented in
+base64-encoded format.
 
 ## Layout
 
 - {{overview}}: A generic overview of the Privacy Pass protocol based on VOPRFs.
 - {{registry}}: Describes the format of trusted registries that are used for
   holding public key commitments for each of the Privacy Pass issuers.
+- {{configurations}}: Details different configurations for using the Privacy
+  Pass protocol.
 - {{privacy}}: Privacy considerations and recommendations arising from the usage
   of the Privacy Pass protocol.
 - {{security}}: Additional security considerations to prevent abuse of the
   protocol from a malicious client.
-- {{encoding}}: Valid data encodings for all objects that are in transit during
-  the protocol.
+- {{params}}: A summary of recommended parameter settings for ensuring privacy
+  and security features of the protocol.
 
 ## Requirements
 
@@ -165,7 +196,7 @@ interpreted as described in {{RFC2119}}.
 # Generalized protocol overview {#overview}
 
 In this document, we will be assuming that a client (C) is attempting to
-authenticate itself in a lightweight manner to a server (S). The authentication
+authenticate itself in a lightweight manner to a server (S). The authorization
 mechanism should not reveal to the server anything about the client; in
 addition, the client should not be able to forge valid credentials in situations
 where it does not possess any.
@@ -179,12 +210,15 @@ revealing their secret input data during the VOPRF protocol to the server. The
 server can use this data to confirm that the client has a valid VOPRF output,
 without being able to link the data to any individual issuance phase.
 
-Throughout this document we adhere to the recommendations laid out in {{OPRF}}
+Throughout this document, we adhere to the recommendations laid out in {{OPRF}}
 in integrating the VOPRF protocol into our wider workflow. Where necessary, we
-lay out exactly which VOPRF API functionality we use. We stress that the
+lay out exactly which part of the VOPRF API we use. We stress that the
 generalized protocol only includes steps and messages that contain cryptographic
-data. In {{encoding}}, we discuss how valid encodings for the data that is sent
-during the protocol.
+data.
+
+We decide against defining abstract interfaces for enclosing Privacy Pass
+data and functionality. Instead, we describe the Privacy Pass protocol in the
+same group setting that is used in {{OPRF}}.
 
 ## Key initialisation phase
 
@@ -224,8 +258,9 @@ we define below.
 
 ~~~ js
   function PP_key_init(k, Y, id) {
-    ppKey.private = bytes(k)
-    ppKey.public = bytes(Y)
+    var ppKey = {}
+    ppKey.private = k
+    ppKey.public = Y
     ppKey.group = id
     var today = new Date()
     var expiry = today.setMonth(today.getMonth() + n);
@@ -253,11 +288,11 @@ We give a diagrammatic representation of the initialisation phase below.
                                 obj
                         <-------------------
 
-    public := key.public
-    if (!ECDSA.verify(ecdsaVK, obj.Y .. bytes(obj.expiry)) {
-      panic(ECDSA_VERIFICATION_FAILED)
-    } else if (!(new Date() < obj.expiry)) {
-      panic(COMMITMENT_EXPIRED_ERROR)
+    public = key.Y
+    if (!ECDSA.verify(ecdsaVK, public .. bytes(obj.expiry)) {
+      panic(KEY_VERIFICATION_ERROR)
+    } else if (!(new Date() > obj.expiry)) {
+      panic(KEY_VERIFICATION_ERROR)
     }
     store(obj.id, obj.public)                            push(key)
 ~~~
@@ -280,44 +315,43 @@ bytes from some unpredictable distribution), and runs the VOPRF evaluation phase
 with the server. The client receives an output y of the form:
 
 ~~~ lua
-    dk = H_2("voprf_derive_key", x .. bytes(N))
-    y = H_2(dk, aux)
+    y = VOPRF_Finalize(x, N, aux)
 ~~~
 
-where H_2 is a function defined in {{OPRF}} that is modeled as a random oracle,
-N is a group element, and aux is auxiliary data that is generated by the client.
-More specifically, N is an unblinded group element equal to k*H_1(x) where H_1
-is a random oracle that outputs elements in GG. The client stores (x, y) as
-recommended in {{OPRF}}. We give a diagrammatic overview of the protocol below.
+where N is a group element, and aux is auxiliary data that is generated by the
+client. More specifically, N is an unblinded group element equal to k*H_1(x)
+where H_1 is a random oracle that outputs elements in GG. The client stores (x,
+y) as recommended in {{OPRF}}. We give a diagrammatic overview of the protocol
+below.
 
 ~~~
     C(x, aux)                                 S(ppKey)
     ----------------------------------------------------------------------
-    var ciph = retrieve(S.id, "ciphersuite")
+    var ciph = retrieve(S.id)
     var (r,M) = VOPRF_Blind(x)
 
-                               M
-                      ------------------>
+                              M
+                     ------------------->
 
                                             (Z,D) = VOPRF_Eval(ppKey.private,
                                                 ciph.G,Y,M)
                                             var resp = {
-                                              element: bytes(Z),
-                                              proof: bytes(D),
+                                              element: Z,
+                                              proof: D,
                                               version: "key_version",
                                             }
 
-                              resp
-                      <------------------
+                             resp
+                     <------------------
 
     var elt = resp.element
     var proof = resp.proof
     var version = resp.version
     var obj = retrieve(S.id, version)
     if obj == "error" {
-      panic(INVALID_COMMITMENT_ERROR)
+      panic(KEY_VERIFICATION_ERROR)
     }
-    var N = VOPRF_Unblind(G,Y,M,elt,proof)
+    var N = VOPRF_Unblind(ciph.G,obj.Y,M,elt,proof)
     var y = VOPRF_Finalize(x,N,aux)
     if (y == "error") {
       panic(CLIENT_VERIFICATION_ERROR)
@@ -335,14 +369,12 @@ correctly perform group operations before sending the first message.
 The redemption phase allows the client to reauthenticate to the server, using
 data that it has received from a previous issuance phase. By the security of the
 VOPRF, even revealing the original input x that is used in the issuance phase
-does not affect the privacy of the client. In other words, no server should be
-able to link a client redemption request to any particular with issuance phase,
-except for negligible probability.
+does not affect the privacy of the client.
 
 ~~~
     C()                                     S(ppKey)
     ----------------------------------------------------------------------
-    var ciph1 = retrieve(S.id, "ciphersuite")
+    ciph1 = retrieve(S.id, "ciphersuite")
     a = pop()
     while (a != undefined) {
       (ciph2,x,y,aux) = a
@@ -352,7 +384,7 @@ except for negligible probability.
         continue
       }
     }
-    if (!a) {
+    if (a == undefined) {
       // no valid data to redeem
       return
     }
@@ -404,7 +436,11 @@ phase of the protocol. Then during the redemption phase, generate auxiliary data
 
 ## Error types {#errors}
 
-TODO: specify error types
+- KEY_VERIFICATION_ERROR: Error occurred when verifying signature and expiry
+  date for a server public key
+- CLIENT_VERIFICATION_ERROR: Error verifying issuance response from server.
+- DOUBLE_SPEND_ERROR: Indicates that a client has attempted to redeem a token
+  that has already been used for authorization
 
 # Key registration {#registry}
 
@@ -427,6 +463,9 @@ To prevent unauthorized modification of the trusted registry, server's should be
 required to identify and authenticate themselves before they can append data to
 their configuration. Moreover, only parts of the registry that correspond to the
 servers configuration can be modifiable.
+
+The registry that we describe could be fulfilled by Key Transparency
+{{keytrans}} or other similar architectures.
 
 ## Key rotation
 
@@ -502,10 +541,10 @@ take the form below.
 
 ## Client retrieval
 
-We define a function retrieve(server_id, version_id) which retrieves the
+We define a function `retrieve(server_id, version_id)` which retrieves the
 commitment with version label equal to version_id, for the provider denoted by
 the string server_id. For example, retrieve("server_1","1.1") will retrieve the
-member labelled with "1.1".
+member labelled with "1.1" above.
 
 We implicitly assume that this function performs the following verification
 checks:
@@ -518,16 +557,16 @@ checks:
   }
 ~~~
 
-If "error" is not returned, then it instead returns the entire object. We also
-abuse notation and also use ciph = retrieve(server_id, "ciphersuite") to refer
+If `error` is not returned, then it instead returns the entire object. We also
+abuse notation and also use `ciph = retrieve(server_id, "ciphersuite")` to refer
 to retrieving the ciphersuite for the server configuration.
 
 ## Key revocation
 
 If a server must revoke a key, then it uses a separate member with label
-"revoke" corresponding to an array of revoke versions associated with key
-commitments. In the above example, if "server_2" needs to revoke the key with
-version "1.0", then it appends a new "revoke" member with the array `[ "1.0" ]`.
+`revoke` corresponding to an array of revoke versions associated with key
+commitments. In the above example, if `server_2` needs to revoke the key with
+version `1.0`, then it appends a new `revoke` member with the array `[ "1.0" ]`.
 Any future revocations can simply be appended to this array. For an example, see
 below.
 
@@ -552,22 +591,22 @@ below.
   }
 ~~~
 
-Client's are required to check the "revoked" member for new additions when they
+Client's are required to check the `revoked` member for new additions when they
 poll the trusted registry for new key data.
 
 ## VOPRF ciphersuites
 
-Following the recommendations in {{OPRF}}, we assume that a server uses only one
-VOPRF ciphersuite at any one time. Should a server choose to change some aspect
-of the ciphersuite (e.g., the group instantiation or other cryptographic
-functionality)  we recommend that the server create a new identifying label
-(e.g. "server_1_${ciphersuite_id}") where ciphersuite_id corresponds to the
-identifier of the VOPRF ciphersuite. Then "server_1" revokes all keys for the
-previous ciphersuite and then only offers commitments for the current label.
+We strongly RECOMMEND that a server uses only one VOPRF ciphersuite at any one
+time. Should a server choose to change some aspect of the ciphersuite (e.g., the
+group instantiation or other cryptographic functionality) we further RECOMMEND
+that the server create a new identifying label (e.g.
+`server_1_${ciphersuite_id}`) where ciphersuite_id corresponds to the identifier
+of the VOPRF ciphersuite. Then `server_1` revokes all keys for the previous
+ciphersuite and then only offers commitments for the current label.
 
 An alternative arrangement would be to add a new layer of members between server
 identifiers and key versions in the JSON struct, corresponding to
-ciphersuite_id. Then the client may choose commitments from the appropriate
+`ciphersuite_id`. Then the client may choose commitments from the appropriate
 group identifying member.
 
 We strongly recommend that service providers only operate with one group
@@ -575,7 +614,7 @@ instantiation at any one time. If a server uses two VOPRF ciphersuites at any
 one time then this may become an avenue for segregating the user-base. User
 segregation can lead to privacy concerns relating to the utility of the
 obliviousness of the VOPRF protocol (as raised in {{OPRF}}). We discuss this
-more in ...
+more in {{privacy}}.
 
 ## ECDSA key material
 
@@ -591,7 +630,7 @@ they support. This may be cumbersome if a provider wants to rotate their signing
 key, but since these keys should be comparatively long-term (relative to the
 VOPRF key schedule), then this should not be too much of an issue.
 
-# Configurations {#configurations}
+# Protocol configurations {#configurations}
 
 We provide an overview of some of the possible ways of configuring the Privacy
 Pass protocol situation, such that it can be used as a lightweight trust
@@ -754,7 +793,7 @@ exponential loss in privacy relative to the number of issuers that there are.
 For example, if there are 32 issuers, then OV learns 32 bits of information
 about the client. If the distribution of issuer trust is anything close to a
 uniform distribution, then this is likely to uniquely identify any client
-amongst all other internet users. Assuming a uniform distribution is clearly the
+amongst all other Internet users. Assuming a uniform distribution is clearly the
 worst-case scenario, and unlikely to be accurate, but it provides a stark
 warning against allowing too many issuers at any one time.
 
@@ -861,7 +900,7 @@ attestation request, then the client simply returns the cached SRR. The SRRs can
 be revoked by the issuer, if need be, by providing an expiry date or by
 signaling that records from a particular window need to be refreshed.
 
-# Summary of privacy and security parameters
+# Summary of privacy and security parameters {#params}
 
 We provide a summary of the parameters that we use in the Privacy Pass protocol.
 These parameters are informed by both privacy and security considerations that
@@ -930,19 +969,3 @@ so the maximum value of I should be 4.
 
 If the value of U is much bigger (e.g. 5 million) then this would permit I =
 log_2(5000000/5000)-1 = 8 issuers.
-
-# Valid data encodings {#encoding}
-
-## Elliptic curve points
-
-When encoding elliptic curve points into existing data structures or into
-protocol messages, we assume that the curve points are first encoded into bytes.
-We allow both uncompressed and compressed encodings, as long as the client and
-server are aligned on the encodings that they used. Compressed encodings provide
-storage and communication benefits but are slightly more expensive to decode.
-
-## Protocol messages
-
-Protocol messages can either be encoded in raw byte format, as base64-encoded
-string objects, or as JSON objects where all strings are represented in
-base64-encoded format.
