@@ -329,10 +329,15 @@ below.
     ----------------------------------------------------------------------
     var ciph = retrieve(S.id)
     var (r,M) = VOPRF_Blind(x)
+    var req = {
+      type: "single",
+      element: M,
+    }
 
-                              M
+                              req
                      ------------------->
 
+                                            M = req.element
                                             (Z,D) = VOPRF_Eval(ppKey.private,
                                                 ciph.G,Y,M)
                                             var resp = {
@@ -351,7 +356,7 @@ below.
     if obj == "error" {
       panic(KEY_VERIFICATION_ERROR)
     }
-    var N = VOPRF_Unblind(ciph.G,obj.Y,M,elt,proof)
+    var N = VOPRF_Unblind(r,ciph.G,obj.Y,M,elt,proof)
     var y = VOPRF_Finalize(x,N,aux)
     if (y == "error") {
       panic(CLIENT_VERIFICATION_ERROR)
@@ -413,6 +418,78 @@ Note that the server uses the API provided by OPRF_Eval and OPRF_Finalize,
 rather than the corresponding VOPRF functions. This is because the VOPRF
 functions also compute zero-knowledge proof data that we do not require at this
 stage of the protocol.
+
+### Batched Issuance phase
+
+To avoid performing a separate round-trip for each token and to generate a more performant
+VOPRF proof, the client and server can do batched issuance of tokens, where multiple x are
+blinded and sent in a patch. The client can then perform an adapted protocol to receive
+VOPRF evaluations from the server, generating up to batchsize tokens based on the retrieved key
+commitment from the server. The client generates valid VOPRF inputs xi (an array of
+a sequence of bytes from some unpredictable distribution), and runs the VOPRF evaluation
+phase with the server. The client receives an output yi of the form:
+
+~~~ lua
+    yi = VOPRF_Finalize(xi, Ni, aux)
+~~~
+
+where Ni is an array of group elements, and aux is auxiliary data that is generated
+by the client. More specifically, Ni is the unblinded group elements equal to k*H_1(xi)
+where H_1 is a random oracle that outputs elements in GG. The client stores pairs of elements
+from xi, yi as (x, y) as recommended in {{OPRF}}. We give a diagrammatic overview of the
+protocol below.
+
+~~~
+    C(x, aux)                                 S(ppKey)
+    ----------------------------------------------------------------------
+    var (ciph, batchsize) = retrieve(S.id)
+    var xi = for i in batchsize: <-$ GF(p)
+    var (ri,Mi) = for x in [xi]: VOPRF_Blind(x)
+    var req = {
+      type: "batched",
+      elements: Mi,
+    }
+
+                              req
+                     ------------------->
+
+                                            if (req.type == "batched") {
+                                              Mi = req.elements
+                                              (Zi,D) = VOPRF_Batch_Eval(ppKey.private,
+                                                  ciph.G,Y,Mi)
+                                              var resp = {
+                                                elements: Zi,
+                                                proof: D,
+                                                version: "key_version",
+                                              }
+                                            } else {
+                                              # Perform standard issuance phase
+                                              ...
+                                            }
+
+                             resp
+                     <------------------
+
+    var elt = resp.elements
+    var proof = resp.proof
+    var version = resp.version
+    var obj = retrieve(S.id, version)
+    if obj == "error" {
+      panic(KEY_VERIFICATION_ERROR)
+    }
+    var Ni = VOPRF_Batch_Unblind(ri,ciph.G,obj.Y,Mi,elt,proof)
+    var yi = VOPRF_Batch_Finalize(xi,Ni,aux)
+    if (yi == "error") {
+      panic(CLIENT_VERIFICATION_ERROR)
+    }
+
+    for (x,y) in [xi, yi]: push((ciph,x,y,aux))
+~~~
+
+In the diagram above, the client knows the VOPRF ciphersuite supported by the
+server when it retrieves in the first step. It uses this information to
+correctly perform group operations before sending the first message.
+
 
 ### Double-spend protection
 
@@ -482,6 +559,7 @@ below.
   {
     "server_1": {
       "ciphersuite": ...,
+      "batchsize": ...,
       "1.0": {
         "Y": ...,
         "expiry": ...,
@@ -495,6 +573,7 @@ below.
     }
     "server_2": {
       "ciphersuite": ...,
+      "batchsize": ...,
       "1.0": {
         "Y": ...,
         "expiry": ...,
@@ -511,7 +590,8 @@ the server. The sub-members "1.0", "1.1" of "server_1" correspond to the
 versions of commitments available to the client. Increasing version numbers
 should correspond to newer keys. Each commitment should be a valid encoding of a
 point corresponding to the group in the VOPRF ciphersuite specified in
-"ciphersuite".
+"ciphersuite". The "batchsize" is the maximum number of tokens it will sign in a
+batched issuance instantiation.
 
 If "server_2" wants to upload a new commitment with version tag "1.1", it runs
 the key initialisation procedure from above and adds a new sub-member "1.1" with
@@ -523,6 +603,7 @@ take the form below.
     ...
     "server_2": {
       "ciphersuite": ...,
+      "batchsize": ...,
       "1.0": {
         "Y": ...,
         "expiry": ...,
